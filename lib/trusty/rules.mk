@@ -6,6 +6,7 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/trusty.c \
 	$(LOCAL_DIR)/trusty_app.c \
 	$(LOCAL_DIR)/syscall.c \
+	$(LOCAL_DIR)/handle.c \
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/include \
