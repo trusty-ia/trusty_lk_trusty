@@ -1,5 +1,4 @@
 /*
- * Copyright (c) 2012-2013, NVIDIA CORPORATION. All rights reserved
  * Copyright (c) 2013, Google, Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
@@ -22,66 +21,22 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef __LIB_TRUSTY_APP_H
-#define __LIB_TRUSTY_APP_H
+#ifndef __LIB_TRUSTY_UCTX_H
+#define __LIB_TRUSTY_UCTX_H
 
-#include <elf.h>
-#include <list.h>
+#include <stdint.h>
 #include <sys/types.h>
-#include <uthread.h>
-#include <lib/trusty/uctx.h>
 
-#ifdef WITH_LIB_OTE
-#include <lib/ote.h>
+#include <lib/trusty/handle.h>
+
+typedef struct uctx uctx_t;
+
+int uctx_create(void *priv, uctx_t **ctx);
+void uctx_destroy(uctx_t *ctx);
+void *uctx_get_priv(uctx_t *ctx);
+
+int uctx_handle_install(uctx_t *ctx, handle_t *handle, int *id);
+int uctx_handle_get(uctx_t *ctx, int handle_id, handle_t **handle_ptr);
+int uctx_handle_wait_any(uctx_t *ctx, handle_t **handle_ptr,
+			 uint32_t *event_ptr, lk_time_t timeout);
 #endif
-
-#define PF_TO_UTM_FLAGS(x) ((((x) & PF_R) ? UTM_R : 0) | \
-			    (((x) & PF_W) ? UTM_W : 0) | \
-			    (((x) & PF_X) ? UTM_X : 0))
-
-typedef struct uuid
-{
-	uint32_t time_low;
-	uint16_t time_mid;
-	uint16_t time_hi_and_version;
-	uint8_t clock_seq_and_node[8];
-} uuid_t;
-
-typedef struct
-{
-	uuid_t		uuid;
-	uint32_t	min_stack_size;
-	uint32_t	min_heap_size;
-	uint32_t	map_io_mem_cnt;
-	uint32_t	config_entry_cnt;
-	uint32_t	*config_blob;
-} trusty_app_props_t;
-
-typedef struct trusty_app
-{
-	vaddr_t end_bss;
-
-	vaddr_t start_brk;
-	vaddr_t cur_brk;
-	vaddr_t end_brk;
-
-	trusty_app_props_t props;
-
-#ifdef WITH_LIB_OTE
-	u_int ote_sessions;
-	ote_app_props_t ote_props;
-#endif
-
-	Elf32_Ehdr *elf_hdr;
-
-	uthread_t *ut;
-	uctx_t *uctx;
-} trusty_app_t;
-
-void trusty_app_init(void);
-status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
-		u_int mmio_id, vaddr_t *vaddr);
-trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid);
-
-#endif
-
