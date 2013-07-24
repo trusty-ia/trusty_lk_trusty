@@ -153,6 +153,7 @@ status_t arm_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr)
 	idx &= MMU_MEMORY_TTBR_L2_INDEX_MASK;
 
 	level_2[idx] = 0;	/* invalid entry */
+	DSB;
 	arm_invalidate_tlb_vaddr(vaddr, ut->arch.asid);
 
 done:
