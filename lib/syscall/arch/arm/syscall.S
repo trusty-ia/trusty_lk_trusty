@@ -44,6 +44,7 @@ FUNCTION (arm_syscall)
 	ldr	r14, =nr_syscalls
 	ldr	r14, [r14]
 	cmp	r12, r14
+	movhs	r0, r12
 	movhs	r12, #SYSCALL_UNDEF
 
 	ldr	r14, =syscall_table

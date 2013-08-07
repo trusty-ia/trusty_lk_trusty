@@ -32,10 +32,13 @@
  *   number, name, #args followed by argument type defintions.
  */
 #include <compiler.h>
+#include <debug.h>
 #include <err.h>
+#include <kernel/thread.h>
 
-static long sys_undefined(void)
+static long sys_undefined(int num)
 {
+	dprintf(SPEW, "%p invalid syscall %d requested\n", current_thread, num);
 	return ERR_NOT_SUPPORTED;
 }
 
