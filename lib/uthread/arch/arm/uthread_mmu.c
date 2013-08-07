@@ -31,7 +31,6 @@
 #include <arch/arm.h>
 #include <arch/arm/mmu.h>
 #include <arch/uthread_mmu.h>
-#include <arch/uthread_asm.h>
 #include <uthread.h>
 
 void arm_uthread_mmu_init()

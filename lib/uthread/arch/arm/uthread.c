@@ -30,7 +30,6 @@
 #include <arch/arm.h>
 #include <arch/arm/mmu.h>
 #include <arch/uthread_mmu.h>
-#include <arch/uthread_asm.h>
 #include <uthread.h>
 
 #define PAGE_MASK	(PAGE_SIZE - 1)
@@ -44,7 +43,15 @@ void arch_uthread_startup(void)
 {
 	struct uthread *ut = (struct uthread *) tls_get(TLS_ENTRY_UTHREAD);
 	vaddr_t sp_usr = ROUNDDOWN(ut->start_stack, 8);
-	arm_uthread_usr_switch(sp_usr, ut->entry, ut->entry);
+
+	__asm__ volatile(
+		"stmdb	sp, {%0, %1}		\n"
+		"ldmdb	sp, {r13, r14}^		\n"
+		"msr	spsr_fxsc, #0x10	\n"
+		"movs	pc, %1			\n"
+		: : "r" (sp_usr),
+		    "r" (ut->entry) : "memory"
+	);
 }
 
 void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)

@@ -145,7 +145,7 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 {
 	uthread_t *ut = NULL;
 	status_t err;
-	vaddr_t stack_top;
+	vaddr_t stack_bot;
 
 	ut = (uthread_t *)calloc(1, sizeof(uthread_t));
 	if (!ut)
@@ -162,8 +162,8 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 	if(!ut->stack)
 		goto err_free_ut;
 
-	stack_top = start_stack - stack_size;
-	err = uthread_map(ut, &stack_top, __pa(ut->stack), stack_size,
+	stack_bot = start_stack - stack_size;
+	err = uthread_map(ut, &stack_bot, __pa(ut->stack), stack_size,
 			UTM_W | UTM_R | UTM_PHYS_CONTIG | UTM_STACK | UTM_FIXED,
 			UT_MAP_ALIGN_4KB);
 	if (err)
