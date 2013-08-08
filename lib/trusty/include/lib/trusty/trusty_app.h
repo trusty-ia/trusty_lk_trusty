@@ -1,0 +1,73 @@
+/*
+ * Copyright (c) 2012-2013, NVIDIA CORPORATION. All rights reserved
+ * Copyright (c) 2013, Google, Inc. All rights reserved
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files
+ * (the "Software"), to deal in the Software without restriction,
+ * including without limitation the rights to use, copy, modify, merge,
+ * publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#ifndef __LIB_TRUSTY_APP_H
+#define __LIB_TRUSTY_APP_H
+
+#include <elf.h>
+#include <list.h>
+#include <sys/types.h>
+#include <uthread.h>
+
+#define PF_TO_UTM_FLAGS(x) ((((x) & PF_R) ? UTM_R : 0) | \
+			    (((x) & PF_W) ? UTM_W : 0) | \
+			    (((x) & PF_X) ? UTM_X : 0))
+
+typedef struct uuid
+{
+	uint32_t time_low;
+	uint16_t time_mid;
+	uint16_t time_hi_and_version;
+	uint8_t clock_seq_and_node[8];
+} uuid_t;
+
+typedef struct
+{
+	uuid_t		uuid;
+	uint32_t	min_stack_size;
+	uint32_t	min_heap_size;
+	uint32_t	map_io_mem_cnt;
+	uint32_t	config_entry_cnt;
+	uint32_t	*config_blob;
+} trusty_app_props_t;
+
+typedef struct trusty_app
+{
+	vaddr_t end_bss;
+
+	vaddr_t start_brk;
+	vaddr_t cur_brk;
+	vaddr_t end_brk;
+
+	trusty_app_props_t props;
+
+	Elf32_Ehdr *elf_hdr;
+
+	uthread_t *ut;
+} trusty_app_t;
+
+void trusty_app_init(void);
+
+#endif
+
