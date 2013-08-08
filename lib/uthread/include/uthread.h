@@ -77,16 +77,6 @@ typedef struct uthread_map
  */
 typedef struct uthread
 {
-	vaddr_t start_code;
-	vaddr_t end_code;
-
-	vaddr_t start_data;
-	vaddr_t end_data;
-	vaddr_t end_bss;
-
-	vaddr_t start_brk;
-	vaddr_t cur_brk;
-	vaddr_t end_brk;
 	vaddr_t start_stack;
 
 	vaddr_t entry;
