@@ -129,6 +129,9 @@ status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t paddr, size_t size,
 /* Unmap a region of memory */
 status_t uthread_unmap(uthread_t *ut, vaddr_t vaddr, size_t size);
 
+/* Check if the given user address range has a valid mapping */
+bool uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size);
+
 /* Temporary function until kernel gets this capability
  * (along with relocation to 3G boundary)
  */

@@ -281,6 +281,11 @@ done:
 	return err;
 }
 
+bool uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size)
+{
+	return uthread_map_find(ut, vaddr, size) != NULL ? true : false;
+}
+
 static void uthread_init(uint level)
 {
 	list_initialize(&uthread_list);
