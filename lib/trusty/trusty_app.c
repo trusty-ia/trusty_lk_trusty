@@ -223,9 +223,9 @@ static status_t init_brk(trusty_app_t *trusty_app)
 	memset(heap, 0, trusty_app->props.min_heap_size);
 
 	vaddr = trusty_app->end_brk;
-	status = uthread_map(trusty_app->ut, &vaddr, __pa(heap),
+	status = uthread_map_contig(trusty_app->ut, &vaddr, __pa(heap),
 			     trusty_app->props.min_heap_size,
-			     UTM_W | UTM_R | UTM_PHYS_CONTIG | UTM_FIXED,
+			     UTM_W | UTM_R | UTM_FIXED,
 			     UT_MAP_ALIGN_4KB);
 	if (status != NO_ERROR || vaddr != trusty_app->end_brk) {
 		dprintf(CRITICAL, "cannot map brk\n");
@@ -286,11 +286,10 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 		size_t size = (prg_hdr->p_memsz + PAGE_MASK) & ~PAGE_MASK;
 		paddr_t paddr = __pa(trusty_app_image + prg_hdr->p_offset);
 		vaddr_t vaddr = prg_hdr->p_vaddr;
-		u_int flags = PF_TO_UTM_FLAGS(prg_hdr->p_flags) |
-			UTM_PHYS_CONTIG | UTM_FIXED;
+		u_int flags = PF_TO_UTM_FLAGS(prg_hdr->p_flags) | UTM_FIXED;
 
-		ret = uthread_map(trusty_app->ut, &vaddr, paddr, size, flags,
-				  UT_MAP_ALIGN_4KB);
+		ret = uthread_map_contig(trusty_app->ut, &vaddr, paddr, size,
+				flags, UT_MAP_ALIGN_4KB);
 		if (ret) {
 			dprintf(CRITICAL, "cannot map the segment\n");
 			return ret;
