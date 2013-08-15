@@ -23,6 +23,7 @@
 
 #include <uthread.h>
 #include <stdlib.h>
+#include <string.h>
 #include <compiler.h>
 #include <assert.h>
 #include <lk/init.h>
@@ -69,21 +70,29 @@ static vaddr_t uthread_find_va_space(uthread_t *ut, size_t size,
 }
 
 static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
-		vaddr_t vaddr, paddr_t paddr, size_t size, u_int flags)
+		vaddr_t vaddr, paddr_t *pfn_list, size_t size, u_int flags)
 {
 	uthread_map_t *mp, *mp_lst;
 	status_t err = NO_ERROR;
+	uint32_t npages;
 
-	mp = (uthread_map_t *)malloc(sizeof(uthread_map_t));
+	ASSERT(!(size & (PAGE_SIZE - 1)));
+
+	if (flags & UTM_PHYS_CONTIG)
+		npages = 1;
+	else
+		npages = (size / PAGE_SIZE);
+
+	mp = malloc(sizeof(uthread_map_t) + (npages * sizeof(mp->pfn_list[0])));
 	if (!mp) {
 		err = ERR_NO_MEMORY;
 		goto err_out;
 	}
 
 	mp->vaddr = vaddr;
-	mp->paddr = paddr;
 	mp->size = size;
 	mp->flags = flags;
+	memcpy(mp->pfn_list, pfn_list, npages*sizeof(paddr_t));
 
 	list_for_every_entry(&ut->map_list, mp_lst, uthread_map_t, node) {
 		if (mp_lst->vaddr > mp->vaddr) {
@@ -163,9 +172,9 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 		goto err_free_ut;
 
 	stack_bot = start_stack - stack_size;
-	err = uthread_map(ut, &stack_bot, __pa(ut->stack), stack_size,
-			UTM_W | UTM_R | UTM_PHYS_CONTIG | UTM_STACK | UTM_FIXED,
-			UT_MAP_ALIGN_4KB);
+	err = uthread_map_contig(ut, &stack_bot, __pa(ut->stack), stack_size,
+				UTM_W | UTM_R | UTM_STACK | UTM_FIXED,
+				UT_MAP_ALIGN_4KB);
 	if (err)
 		goto err_free_ut_stack;
 
@@ -227,14 +236,19 @@ void uthread_context_switch(thread_t *oldthread, thread_t *newthread)
 	arch_uthread_context_switch(old_ut, new_ut);
 }
 
-status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t paddr,
+status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t *pfn_list,
 		size_t size, u_int flags, u_int align)
 {
 	uthread_map_t *mp = NULL;
 	status_t err = NO_ERROR;
 
-	if (!ut || !paddr || !vaddrp) {
+	if (!ut || !pfn_list || !vaddrp) {
 		err = ERR_INVALID_ARGS;
+		goto done;
+	}
+
+	if((size & (PAGE_SIZE - 1))) {
+		err = ERR_NOT_VALID;
 		goto done;
 	}
 
@@ -247,7 +261,7 @@ status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t paddr,
 		}
 	}
 
-	err = uthread_map_alloc(ut, &mp, *vaddrp, paddr, size, flags);
+	err = uthread_map_alloc(ut, &mp, *vaddrp, pfn_list, size, flags);
 	if(err)
 		goto done;
 

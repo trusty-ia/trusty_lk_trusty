@@ -128,11 +128,15 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
 
 	for (pg = 0; pg < (mp->size / PAGE_SIZE); pg++) {
 		if (mp->flags & UTM_PHYS_CONTIG)
-			paddr = mp->paddr + (pg * PAGE_SIZE);
+			paddr = mp->pfn_list[0] + (pg * PAGE_SIZE);
 		else
-			paddr = ((uint *)(mp->paddr))[pg];
+			paddr = mp->pfn_list[pg];
 
-		ASSERT(!(paddr & PAGE_MASK));
+		if (paddr & PAGE_MASK) {
+			err = ERR_INVALID_ARGS;
+			goto err_undo_maps;
+		}
+
 		vaddr = mp->vaddr + (pg * PAGE_SIZE);
 
 		err = arm_uthread_mmu_map(ut, paddr, vaddr,
@@ -147,7 +151,7 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
 err_undo_maps:
 	for(u_int p = 0; p < pg; p++) {
 		arm_uthread_mmu_unmap(ut,
-			mp->vaddr + (pg * PAGE_SIZE));
+			mp->vaddr + (p * PAGE_SIZE));
 	}
 done:
 	return err;

@@ -33,11 +33,11 @@
 
 typedef struct uthread_map
 {
-	paddr_t paddr;
 	vaddr_t vaddr;
 	size_t  size;
 	u_int  flags;
 	struct list_node node;
+	paddr_t pfn_list[];
 } uthread_map_t;
 
 /*
@@ -123,14 +123,22 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 status_t uthread_start(uthread_t *ut);
 
 /* Map a region of memory in the uthread */
-status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t paddr, size_t size,
-		u_int flags, u_int align);
+status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t *pfn_list,
+		size_t size, u_int flags, u_int align);
 
 /* Unmap a region of memory */
 status_t uthread_unmap(uthread_t *ut, vaddr_t vaddr, size_t size);
 
 /* Check if the given user address range has a valid mapping */
 bool uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size);
+
+static inline __ALWAYS_INLINE
+status_t uthread_map_contig(uthread_t *ut, vaddr_t *vaddrp, paddr_t paddr,
+		size_t size, u_int flags, u_int align)
+{
+	flags = flags | UTM_PHYS_CONTIG;
+	return uthread_map(ut, vaddrp, &paddr, size, flags, align);
+}
 
 /* Temporary function until kernel gets this capability
  * (along with relocation to 3G boundary)

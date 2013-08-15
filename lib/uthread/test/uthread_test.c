@@ -39,8 +39,8 @@ void uthread_test(void)
 		return;
 
 	/* Map the code section */
-	err = uthread_map(ut1, &entry, __pa(umain), (size_t)0x1000,
-			UTM_R | UTM_W| UTM_X | UTM_PHYS_CONTIG | UTM_FIXED,
+	err = uthread_map_contig(ut1, &entry, __pa(umain), (size_t)0x1000,
+			UTM_R | UTM_W| UTM_X | UTM_FIXED,
 			UT_MAP_ALIGN_DEFAULT);
 
 	if (err) {
@@ -51,8 +51,8 @@ void uthread_test(void)
 
 	/* Map in another time and remove it to test map/unmap */
 	vaddr_t map_addr1, map_addr2;
-	err = uthread_map(ut1, &map_addr1, __pa(umain), (size_t)0x1000,
-			UTM_R | UTM_W | UTM_X | UTM_PHYS_CONTIG,
+	err = uthread_map_contig(ut1, &map_addr1, __pa(umain), (size_t)0x1000,
+			UTM_R | UTM_W | UTM_X,
 			UT_MAP_ALIGN_DEFAULT);
 
 	if (err) {
@@ -61,10 +61,10 @@ void uthread_test(void)
 		return;
 	}
 
-	dprintf(SPEW, "uthread_map returned map_addr1 = 0x%lx\n", map_addr1);
+	dprintf(SPEW, "uthread_map_contig returned map_addr1 = 0x%lx\n", map_addr1);
 
-	err = uthread_map(ut1, &map_addr2, __pa(umain), (size_t)0x10000,
-			UTM_R | UTM_W | UTM_X | UTM_PHYS_CONTIG,
+	err = uthread_map_contig(ut1, &map_addr2, __pa(umain), (size_t)0x10000,
+			UTM_R | UTM_W | UTM_X,
 			UT_MAP_ALIGN_1MB);
 
 	if (err) {
@@ -73,7 +73,7 @@ void uthread_test(void)
 		return;
 	}
 
-	dprintf(SPEW, "uthread_map returned map_addr2 = 0x%lx\n", map_addr2);
+	dprintf(SPEW, "uthread_map_contig returned map_addr2 = 0x%lx\n", map_addr2);
 
 	/* Start unmapping sample segments */
 	err = uthread_unmap(ut1, map_addr1, 0x1000);
@@ -102,8 +102,8 @@ void uthread_test(void)
 	if(!ut2)
 		return;
 
-	err = uthread_map(ut2, &entry, __pa(umain), 0x1000,
-			UTM_R | UTM_W | UTM_X | UTM_PHYS_CONTIG | UTM_FIXED,
+	err = uthread_map_contig(ut2, &entry, __pa(umain), 0x1000,
+			UTM_R | UTM_W | UTM_X | UTM_FIXED,
 			UT_MAP_ALIGN_DEFAULT);
 
 	if (err) {
