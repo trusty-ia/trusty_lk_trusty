@@ -41,6 +41,10 @@
 
 #include <lib/trusty/trusty_app.h>
 
+#ifdef WITH_LIB_OTE
+#include <lib/ote.h>
+#endif
+
 /*
  * Layout of .trusty_app.manifest section in the trusted application is the
  * required UUID followed by an abitrary number of configuration options.
@@ -161,8 +165,14 @@ static void load_app_config_options(u_int trusty_app_image_addr,
 			i += 3;
 			break;
 		default:
+#ifdef WITH_LIB_OTE
+			/* Give OTE a chance to recognize this key */
+			if (ote_load_config_option(trusty_app,
+					config_blob, &i) == NO_ERROR)
+				break;
+#endif
 			dprintf(CRITICAL,
-				"%s: unknown TRUSTY_APP_CONFIG_KEY_VALUE: %d\n",
+				"%s: unknown config key: %d\n",
 				__func__, config_blob[i]);
 			ASSERT(0);
 			i++;
@@ -552,4 +562,17 @@ void trusty_app_init()
 			}
 		}
 	}
+}
+
+trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid)
+{
+	trusty_app_t *ta;
+	u_int i;
+
+	/* find app for this uuid */
+	for (i = 0, ta = trusty_app_list; i < trusty_app_count; i++, ta++)
+		if (!memcmp(&ta->props.uuid, uuid, sizeof(uuid_t)))
+			return ta;
+
+	return NULL;
 }

@@ -30,6 +30,10 @@
 #include <sys/types.h>
 #include <uthread.h>
 
+#ifdef WITH_LIB_OTE
+#include <lib/ote.h>
+#endif
+
 #define PF_TO_UTM_FLAGS(x) ((((x) & PF_R) ? UTM_R : 0) | \
 			    (((x) & PF_W) ? UTM_W : 0) | \
 			    (((x) & PF_X) ? UTM_X : 0))
@@ -62,6 +66,11 @@ typedef struct trusty_app
 
 	trusty_app_props_t props;
 
+#ifdef WITH_LIB_OTE
+	u_int ote_sessions;
+	ote_app_props_t ote_props;
+#endif
+
 	Elf32_Ehdr *elf_hdr;
 
 	uthread_t *ut;
@@ -70,6 +79,7 @@ typedef struct trusty_app
 void trusty_app_init(void);
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
 		u_int mmio_id, vaddr_t *vaddr);
+trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid);
 
 #endif
 

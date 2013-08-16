@@ -32,6 +32,10 @@
 #include <uthread.h>
 #include <lib/trusty/trusty_app.h>
 
+#ifdef WITH_LIB_OTE
+#include <lib/ote.h>
+#endif
+
 static bool valid_address(vaddr_t addr, u_int size)
 {
 	return uthread_is_valid_range(uthread_get_current(), addr, size);
@@ -52,7 +56,12 @@ long sys_write(uint32_t fd, void *msg, uint32_t size)
 		}
 		return size;
 	}
+
+#ifdef WITH_LIB_OTE
+	return ote_sys_write(fd, msg, size);
+#else
 	return ERR_INVALID_ARGS;
+#endif
 }
 
 long sys_brk(u_int brk)
@@ -71,3 +80,25 @@ long sys_exit_group(void)
 	thread_exit(0);
 	return 0L;
 }
+
+#ifdef WITH_LIB_OTE
+long sys_read(uint32_t fd, void *msg, uint32_t size)
+{
+	return ote_sys_read(fd, msg, size);
+}
+
+long sys_ioctl(uint32_t fd, uint32_t req, void *buf)
+{
+	return ote_sys_ioctl(fd, req, buf);
+}
+#else
+long sys_read(uint32_t fd, void *msg, uint32_t size)
+{
+	return ERR_NOT_SUPPORTED;
+}
+
+long sys_ioctl(uint32_t fd, uint32_t req, void *buf)
+{
+	return ERR_NOT_SUPPORTED;
+}
+#endif /* WITH_LIB_OTE */

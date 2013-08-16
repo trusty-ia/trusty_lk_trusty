@@ -25,9 +25,18 @@
 #include <lk/init.h>
 #include <stdio.h>
 
+#ifdef WITH_LIB_OTE
+#include <lib/ote.h>
+#endif
+
 static void trusty_init(uint level)
 {
 	printf("initializing trusty\n");
+
+#ifdef WITH_LIB_OTE
+	ote_init();
+#endif
+
 	trusty_app_init();
 }
 
