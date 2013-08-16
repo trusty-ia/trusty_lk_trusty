@@ -41,11 +41,12 @@ void arm_uthread_mmu_init()
 
 	cur_ttbr0 = arm_read_ttbr0();
 
+	/* push out kernel mappings to ttbr1 */
+	arm_write_ttbr1(cur_ttbr0);
+
 	/* setup a user-kernel split */
 	arm_write_ttbcr(MMU_MEMORY_TTBCR_N);
 
-	/* push out kernel mappings to ttbr1 */
-	arm_write_ttbr1(cur_ttbr0);
 	arm_invalidate_tlb();
 }
 
