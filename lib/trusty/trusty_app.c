@@ -63,7 +63,7 @@ typedef struct trusty_app_manifest {
 #define MAX_TRUSTY_APP_COUNT	(PAGE_SIZE / sizeof(trusty_app_t))
 
 #define TRUSTY_APP_START_ADDR	0x8000
-#define TRUSTY_APP_STACK_TOP	0x2000000 /* 32MB */
+#define TRUSTY_APP_STACK_TOP	0x1000000 /* 16MB */
 
 #define PAGE_MASK		(PAGE_SIZE - 1)
 
@@ -178,30 +178,6 @@ static void load_app_config_options(u_int trusty_app_image_addr,
 	dprintf(SPEW, "trusty_app %p: num_io_mem=%d\n", trusty_app,
 		trusty_app->props.map_io_mem_cnt);
 #endif
-}
-
-static void setup_app_mmio(trusty_app_t *trusty_app)
-{
-	u_int i;
-	u_int id, offset, size;
-
-	/* step thru configuration blob looking for I/O mapping requests */
-	for (i = 0; i < trusty_app->props.config_entry_cnt; i++) {
-		if (trusty_app->props.config_blob[i] == TRUSTY_APP_CONFIG_KEY_MAP_MEM) {
-			/* found one; setup mapping to io range */
-			id = trusty_app->props.config_blob[++i];
-			offset = trusty_app->props.config_blob[++i];
-			size = trusty_app->props.config_blob[++i];
-
-			/* TODO: add mmio support */
-			dprintf(INFO,
-				"TODO: setup mmio id %d, offs 0x%08x,"
-				" sz 0x%x\n", id, offset, size);
-		} else {
-			/* all other config options take 1 data value */
-			i++;
-		}
-	}
 }
 
 static status_t init_brk(trusty_app_t *trusty_app)
@@ -501,6 +477,35 @@ static void trusty_app_bootloader(void)
 	}
 }
 
+status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
+		vaddr_t *vaddr)
+{
+	u_int i;
+	u_int id, offset, size;
+
+	/* step thru configuration blob looking for I/O mapping requests */
+	for (i = 0; i < trusty_app->props.config_entry_cnt; i++) {
+		if (trusty_app->props.config_blob[i] == TRUSTY_APP_CONFIG_KEY_MAP_MEM) {
+			id = trusty_app->props.config_blob[++i];
+			offset = trusty_app->props.config_blob[++i];
+			size = ROUNDUP(trusty_app->props.config_blob[++i],
+					PAGE_SIZE);
+
+			if (id != mmio_id)
+				continue;
+
+			return uthread_map_contig(trusty_app->ut, vaddr, offset,
+						size, UTM_W | UTM_R | UTM_IO,
+						UT_MAP_ALIGN_4KB);
+		} else {
+			/* all other config options take 1 data value */
+			i++;
+		}
+	}
+
+	return ERR_NOT_FOUND;
+}
+
 void trusty_app_init()
 {
 	trusty_app_t *trusty_app;
@@ -537,11 +542,6 @@ void trusty_app_init()
 		if (ret != NO_ERROR) {
 			dprintf(CRITICAL, "failed to load address map\n");
 			halt();
-		}
-
-		/* reserve mmio va ranges here */
-		if (trusty_app->props.map_io_mem_cnt > 0) {
-			setup_app_mmio(trusty_app);
 		}
 
 		if (trusty_app->ut->entry) {

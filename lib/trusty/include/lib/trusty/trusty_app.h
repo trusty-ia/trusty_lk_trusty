@@ -68,6 +68,8 @@ typedef struct trusty_app
 } trusty_app_t;
 
 void trusty_app_init(void);
+status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
+		u_int mmio_id, vaddr_t *vaddr);
 
 #endif
 
