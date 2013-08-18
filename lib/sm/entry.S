@@ -1,0 +1,236 @@
+/*
+ * Copyright (c) 2013, Google Inc. All rights reserved
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files
+ * (the "Software"), to deal in the Software without restriction,
+ * including without limitation the rights to use, copy, modify, merge,
+ * publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#include <asm.h>
+#include <lib/sm/monitor.h>
+
+.macro SAVE_CONTEXT
+	push	{r4-r11, lr}
+	mov	r4, sp
+
+	cps	#MODE_IRQ
+	mrs	r5, spsr
+	stmfd	r4!, {r5, sp, lr}
+
+	cps	#MODE_SVC
+	mrs	r5, spsr
+	stmfd	r4!, {r5, sp, lr}
+
+	cps	#MODE_ABT
+	mrs	r5, spsr
+	stmfd	r4!, {r5, sp, lr}
+
+	cps	#MODE_UND
+	mrs	r5, spsr
+	stmfd	r4!, {r5, sp, lr}
+
+	cps	#MODE_SYS
+	mrs	r5, spsr
+	stmfd	r4!, {r5, sp, lr}
+
+	cps	#MODE_MON
+	mov	sp, r4
+.endm
+
+.macro RESTORE_CONTEXT
+	mov	r4, sp
+
+	cps	#MODE_SYS
+	ldmfd	r4!, {r5, sp, lr}
+	msr	spsr, r5
+
+	cps	#MODE_UND
+	ldmfd	r4!, {r5, sp, lr}
+	msr	spsr, r5
+
+	cps	#MODE_ABT
+	ldmfd	r4!, {r5, sp, lr}
+	msr	spsr, r5
+
+	cps	#MODE_SVC
+	ldmfd	r4!, {r5, sp, lr}
+	msr	spsr, r5
+
+	cps	#MODE_IRQ
+	ldmfd	r4!, {r5, sp, lr}
+	msr	spsr, r5
+
+	cps	#MODE_MON
+	mov	sp, r4
+	pop	{r4-r11, lr}
+.endm
+
+.p2align 5
+.globl monitor_vector_table
+monitor_vector_table:
+	nop				/* RESET	*/
+	b	.			/* UNDEF	*/
+	b	arm_smcall		/* SWI		*/
+	b	.			/* IABORT	*/
+	b	.			/* DABORT	*/
+	nop				/* reserved	*/
+	b	.			/* IRQ		*/
+	b	.			/* FIQ		*/
+
+/* Secure monitor call
+ * r0    = SMC call number
+ * r1-r3 = args
+ * r0    = return value
+ */
+FUNCTION(arm_smcall)
+	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
+
+	/* Dispatch SMC handler */
+	ldr	r14, =nr_smcalls
+	ldr	r14, [r14]
+	cmp	r0, r14
+
+	ldr	r14, =smcall_table
+	addlo	r14, r14, r0, lsl#2
+	ldr	r14, [r14]
+	blx	r14
+	rfefd	sp!
+
+FUNCTION(sm_boot_ns)
+	SWITCH_SCR_TO_NONSECURE ip
+	rfefd	sp!
+
+FUNCTION(platform_reset)
+	cps	#MODE_MON
+
+	adr	sp, platform_reset	/* sp = paddr */
+	ldr	ip, =platform_reset	/* ip = vaddr */
+	sub	ip, sp, ip		/* ip = phys_offset */
+	ldr	sp, =mon_ns_stack_top	/* sp = ns_stack vaddr */
+	add	sp, sp, ip		/* sp = ns_stack paddr */
+
+	cps	#MODE_SVC
+	msr	spsr_cfsx, #MODE_SVC_IRQ_DISABLED
+	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
+	cps	#MODE_MON
+
+	ldr	lr, =sm_boot_ns
+	SAVE_CONTEXT
+
+	ldr	lr, =mon_ns_sp	/* lr = mon_ns_sp vaddr */
+	add	lr, lr, ip	/* lr = mon_ns_sp paddr */
+	sub	sp, sp, ip	/* sp = sp vaddr */
+	str	sp, [lr]
+
+	/* Switch to S thread in monitor */
+	ldr	sp, =mon_s_stack_top
+
+	/* Initialize NS mode CPU context registers */
+	mrc	p15, 0, r4, c12, c0, 0	/* r4 = VBAR */
+	mrc	p15, 0, r5, c2, c0, 0	/* r5 = TTBR0 */
+	mrc	p15, 0, r6, c2, c0, 1	/* r6 = TTBR1 */
+	mrc	p15, 0, r7, c3, c0, 0	/* r7 = DACR */
+	mrc	p15, 0, r8, c1, c0, 0	/* r8 = SCTLR */
+
+	SWITCH_SCR_TO_NONSECURE r9
+
+	mcr	p15, 0, r4, c12, c0, 0	/* VBAR = r4 */
+	mcr	p15, 0, r5, c2, c0, 0	/* TTBR0 = r5 */
+	mcr	p15, 0, r6, c2, c0, 1	/* TTBR1 = r6 */
+	mcr	p15, 0, r7, c3, c0, 0	/* DACR = r7 */
+	mcr	p15, 0, r8, c1, c0, 0	/* SCTLR = r8 */
+
+	SWITCH_SCR_TO_SECURE r9
+
+	/* r0 is memsize passed in by the bootloader */
+	ldr	r4, =_start	/* r4 = _start vaddr */
+	add	r4, r4, r0	/* r4 = _start + size */
+
+	ldr	r5, =_heap_end	/* r5 = _heap_end vaddr */
+	add	r5, r5, ip	/* r5 = _heap_end paddr */
+	str	r4, [r5]
+
+	cps	#MODE_SVC
+	b	arm_reset
+
+/* Context switch preserving r0-r1 */
+FUNCTION(sm_context_switch)
+	SAVE_CONTEXT
+	str	sp, [r2]
+	clrex
+	mov	sp, r3
+	RESTORE_CONTEXT
+	bx	lr
+
+/* long sm_sched_secure(ns_args_t *ns_args) */
+FUNCTION(sm_sched_secure)
+
+	SWITCH_SCR_TO_SECURE r1
+	/* Context switch to secure */
+	ldr	r2, =mon_ns_sp
+	ldr	r3, =mon_s_sp
+	ldr	r3, [r3]
+	push	{ip, lr}
+	bl	sm_context_switch
+	pop	{ip, lr}
+	SWITCH_SCR_TO_NONSECURE ip
+	/* clear scratch registers for security */
+	mov	r1, #0
+	mov	r2, #0
+	mov	r3, #0
+	mov	ip, #0
+	bx	lr
+
+/* smc_go_nonsecure(uint32_t smc_nr, uint32_t retval) */
+FUNCTION(smc_go_nonsecure)
+
+	/* If NS called this, go back */
+	mrc	p15, 0, r0, c1, c1, 0	/* r0 = SCR */
+	tst	r0, #0x1
+	bxne	lr
+
+	/* Save return value */
+	mov	r0, r1
+
+	/* Context switch to nonsecure */
+	ldr	r2, =mon_s_sp
+	ldr	r3, =mon_ns_sp
+	ldr	r3, [r3]
+	b	sm_context_switch
+
+/* sm_sched_nonsecure(uint32_t retval) */
+FUNCTION(sm_sched_nonsecure)
+	mov	r1, r0
+	mov	r0, #SMC_GO_NONSECURE
+	smc	#0
+	bx	lr
+
+.data
+.align 3
+LOCAL_DATA(mon_ns_stack)
+	.skip	4096
+DATA(mon_ns_stack_top)
+LOCAL_DATA(mon_ns_sp)
+	.long	0
+
+.align 3
+LOCAL_DATA(mon_s_stack)
+	.skip	1024
+DATA(mon_s_stack_top)
+LOCAL_DATA(mon_s_sp)
+	.long 0
