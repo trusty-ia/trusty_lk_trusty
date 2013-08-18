@@ -301,6 +301,24 @@ bool uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size)
 	return uthread_map_find(ut, vaddr, size) != NULL ? true : false;
 }
 
+status_t copy_from_user(void *kdest, user_addr_t usrc, size_t len)
+{
+	/* TODO: be smarter about handling invalid addresses... */
+	if (!uthread_is_valid_range(uthread_get_current(), (vaddr_t)usrc, len))
+		return ERR_FAULT;
+	memcpy(kdest, (void *)usrc, len);
+	return NO_ERROR;
+}
+
+status_t copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
+{
+	/* TODO: be smarter about handling invalid addresses... */
+	if (!uthread_is_valid_range(uthread_get_current(), (vaddr_t)udest, len))
+		return ERR_FAULT;
+	memcpy((void *)udest, ksrc, len);
+	return NO_ERROR;
+}
+
 static void uthread_init(uint level)
 {
 	list_initialize(&uthread_list);
