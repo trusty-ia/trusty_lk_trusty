@@ -70,7 +70,8 @@ static vaddr_t uthread_find_va_space(uthread_t *ut, size_t size,
 }
 
 static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
-		vaddr_t vaddr, paddr_t *pfn_list, size_t size, u_int flags)
+		vaddr_t vaddr, paddr_t *pfn_list, size_t size, u_int flags,
+		u_int align)
 {
 	uthread_map_t *mp, *mp_lst;
 	status_t err = NO_ERROR;
@@ -92,6 +93,7 @@ static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
 	mp->vaddr = vaddr;
 	mp->size = size;
 	mp->flags = flags;
+	mp->align = align;
 	memcpy(mp->pfn_list, pfn_list, npages*sizeof(paddr_t));
 
 	list_for_every_entry(&ut->map_list, mp_lst, uthread_map_t, node) {
@@ -107,7 +109,8 @@ static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
 
 	list_add_tail(&ut->map_list, &mp->node);
 out:
-	*mpp = mp;
+	if (mpp)
+		*mpp = mp;
 	return NO_ERROR;
 
 err_free_mp:
@@ -262,7 +265,7 @@ status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t *pfn_list,
 		}
 	}
 
-	err = uthread_map_alloc(ut, &mp, *vaddrp, pfn_list, size, flags);
+	err = uthread_map_alloc(ut, &mp, *vaddrp, pfn_list, size, flags, align);
 	if(err)
 		goto done;
 
@@ -318,6 +321,103 @@ status_t copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
 	memcpy((void *)udest, ksrc, len);
 	return NO_ERROR;
 }
+
+#ifdef WITH_LIB_OTE
+status_t uthread_virt_to_phys(uthread_t *ut, vaddr_t vaddr, paddr_t *paddr)
+{
+	uthread_map_t *mp;
+	u_int offset = vaddr & (PAGE_SIZE -1);
+
+	mp = uthread_map_find(ut, vaddr, 0);
+	if (!mp)
+		return ERR_INVALID_ARGS;
+
+	if (mp->flags & UTM_PHYS_CONTIG) {
+		*paddr = mp->pfn_list[0] + (vaddr - mp->vaddr);
+	} else {
+		uint32_t pg = (vaddr - mp->vaddr) / PAGE_SIZE;
+		*paddr = mp->pfn_list[pg] + offset;
+	}
+	return NO_ERROR;
+}
+
+status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
+		size_t size, u_int flags, vaddr_t *vaddr_target, bool ns_src)
+{
+	u_int align, npages;
+	paddr_t *pfn_list;
+	status_t err;
+	u_int offset;
+
+	offset = vaddr_src & (PAGE_SIZE -1);
+	vaddr_src = ROUNDDOWN(vaddr_src, PAGE_SIZE);
+
+	if (ns_src) {
+		align = UT_MAP_ALIGN_1MB;
+		flags |= UTM_NS_MEM;
+	} else {
+		uthread_t *ut_src = uthread_get_current();
+		uthread_map_t *mp_src;
+
+		mp_src = uthread_map_find(ut_src, vaddr_src, size);
+		if (!mp_src) {
+			err = ERR_INVALID_ARGS;
+			goto err_out;
+		}
+
+		if (mp_src->flags & UTM_NS_MEM)
+			flags = flags | UTM_NS_MEM;
+
+		align = mp_src->align;
+	}
+
+	size = ROUNDUP((size + offset), PAGE_SIZE);
+
+	npages = size / PAGE_SIZE;
+	if (npages == 1)
+		flags |= UTM_PHYS_CONTIG;
+
+	*vaddr_target = uthread_find_va_space(ut_target, size, flags, align);
+	if (!(*vaddr_target)) {
+		err = ERR_NO_MEMORY;
+		goto err_out;
+	}
+
+	pfn_list = malloc(npages * sizeof(paddr_t));
+	if (!pfn_list) {
+		err = ERR_NO_MEMORY;
+		goto err_out;
+	}
+
+	/* translate and map */
+	err = arch_uthread_translate_map(ut_target, vaddr_src, *vaddr_target,
+			pfn_list, npages, flags, ns_src);
+
+	if (err != NO_ERROR)
+		goto err_free_pfn_list;
+
+	err = uthread_map_alloc(ut_target, NULL, *vaddr_target, pfn_list,
+			size, flags, align);
+
+	/* Add back the offset after translation and mapping */
+	*vaddr_target += offset;
+
+err_free_pfn_list:
+	if (pfn_list)
+		free(pfn_list);
+err_out:
+	return err;
+}
+
+status_t uthread_revoke_pages(uthread_t *ut, vaddr_t vaddr, size_t size)
+{
+	u_int offset = vaddr & (PAGE_SIZE - 1);
+	vaddr = ROUNDDOWN(vaddr, PAGE_SIZE);
+	size  = ROUNDUP(size + offset, PAGE_SIZE);
+
+	return uthread_unmap(ut, vaddr, size);
+}
+#endif
 
 static void uthread_init(uint level)
 {

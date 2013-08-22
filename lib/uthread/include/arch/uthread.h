@@ -26,6 +26,8 @@
 
 #include <arch/arch_uthread.h>
 #include <err.h>
+#include <stdbool.h>
+#include <sys/types.h>
 
 struct uthread;
 struct uthread_map;
@@ -41,4 +43,10 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp);
 status_t arch_uthread_unmap(struct uthread *ut, struct uthread_map *mp);
 
+#ifdef WITH_LIB_OTE
+status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src,
+		vaddr_t vaddr_target, paddr_t *pfn_list,
+		uint32_t npages, u_int flags, bool ns_src);
 #endif
+
+#endif /* __ARCH_UTHREAD_H */
