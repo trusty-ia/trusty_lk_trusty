@@ -80,6 +80,7 @@ status_t arm_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
 {
 	uint32_t *page_table;
 	u_int *level_2;
+	paddr_t level_2_paddr;
 	u_int idx;
 	status_t err = NO_ERROR;
 
@@ -99,8 +100,8 @@ status_t arm_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
 	idx = vaddr >> 20;
 	idx &= MMU_MEMORY_TTBR0_L1_INDEX_MASK;
 
-	level_2 = (u_int *)(page_table[idx] & ~(MMU_MEMORY_TTBR_L2_SIZE - 1));
-	if (!level_2) {
+	level_2_paddr = page_table[idx] & ~(MMU_MEMORY_TTBR_L2_SIZE - 1);
+	if (!level_2_paddr) {
 		/* alloc level 2 page table */
 		level_2 = arm_uthread_mmu_alloc_pgtbl(PGTBL_LEVEL_2);
 		if (level_2 == NULL) {
@@ -110,8 +111,10 @@ status_t arm_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
 		}
 
 		/* install in level_1 */
-		page_table[idx] = (u_int)level_2;
+		page_table[idx] = kvaddr_to_paddr(level_2);
 		page_table[idx] |= ((MMU_MEMORY_DOMAIN_MEM << 5) | l1_flags | 0x1);
+	} else {
+		level_2 = paddr_to_kvaddr(level_2_paddr);
 	}
 
 	idx = vaddr >> 12;
