@@ -27,6 +27,7 @@
 #include <compiler.h>
 #include <assert.h>
 #include <lk/init.h>
+#include <trace.h>
 
 /* Global list of all userspace threads */
 static struct list_node uthread_list;
@@ -226,6 +227,25 @@ status_t uthread_start(uthread_t *ut)
 		return ERR_INVALID_ARGS;
 
 	return thread_resume(ut->thread);
+}
+
+void __NO_RETURN uthread_exit(int retcode)
+{
+	uthread_t *ut;
+
+	ut = uthread_get_current();
+	if (ut) {
+		uthread_free_maps(ut);
+		free(ut->stack);
+		arch_uthread_free(ut);
+		uthread_free_utid(ut->id);
+		free(ut);
+	} else {
+		TRACEF("WARNING: unexpected call on kernel thread %s!",
+				current_thread->name);
+	}
+
+	thread_exit(retcode);
 }
 
 void uthread_context_switch(thread_t *oldthread, thread_t *newthread)

@@ -125,6 +125,9 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 /* Start the user thread */
 status_t uthread_start(uthread_t *ut);
 
+/* Exit current uthread */
+void uthread_exit(int retcode) __NO_RETURN;
+
 /* Map a region of memory in the uthread */
 status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t *pfn_list,
 		size_t size, u_int flags, u_int align);
