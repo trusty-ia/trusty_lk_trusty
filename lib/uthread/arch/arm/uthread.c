@@ -59,7 +59,7 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 	paddr_t pgd;
 
 	if (new_ut->page_table) {
-		pgd = __pa(new_ut->page_table);
+		pgd = kvaddr_to_paddr(new_ut->page_table);
 		arm_write_ttbr0(pgd);
 	}
 

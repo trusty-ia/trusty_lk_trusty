@@ -172,7 +172,8 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 		goto err_free_ut;
 
 	stack_bot = start_stack - stack_size;
-	err = uthread_map_contig(ut, &stack_bot, __pa(ut->stack), stack_size,
+	err = uthread_map_contig(ut, &stack_bot, kvaddr_to_paddr(ut->stack),
+				stack_size,
 				UTM_W | UTM_R | UTM_STACK | UTM_FIXED,
 				UT_MAP_ALIGN_4KB);
 	if (err)

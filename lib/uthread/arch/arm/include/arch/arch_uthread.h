@@ -25,6 +25,8 @@
 #ifndef __ARM_ARCH_UTHREAD_H
 #define __ARM_ARCH_UTHREAD_H
 
+#include <arch/arm/mmu.h>
+
 #ifdef ARM_WITH_NEON
 typedef struct arch_fpctx {
 	uint32_t fpexc;

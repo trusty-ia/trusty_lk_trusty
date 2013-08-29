@@ -140,14 +140,6 @@ status_t uthread_map_contig(uthread_t *ut, vaddr_t *vaddrp, paddr_t paddr,
 	return uthread_map(ut, vaddrp, &paddr, size, flags, align);
 }
 
-/* Temporary function until kernel gets this capability
- * (along with relocation to 3G boundary)
- */
-static inline __ALWAYS_INLINE paddr_t __pa(void *ptr)
-{
-	return (paddr_t) ptr;
-}
-
 static inline uthread_t *uthread_get_current(void)
 {
 	return (uthread_t *)tls_get(TLS_ENTRY_UTHREAD);
