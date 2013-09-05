@@ -23,8 +23,6 @@
 #ifndef __VEXPRESS_A15_H
 #define __VEXPRESS_A15_H
 
-#include <reg.h>
-
 #define REGISTER_BANK_0_PADDR (0x1c000000)
 #define REGISTER_BANK_1_PADDR (0x1c100000)
 #define REGISTER_BANK_2_PADDR (0x2c000000)
@@ -32,6 +30,9 @@
 #define REGISTER_BANK_0_VADDR (0x1c000000) /* use identry map for now */
 #define REGISTER_BANK_1_VADDR (0x1c100000)
 #define REGISTER_BANK_2_VADDR (0x2c000000)
+
+/* hardware base addresses */
+#define SECONDARY_BOOT_ADDR (REGISTER_BANK_0_VADDR + 0x10030)
 
 #define UART0 (REGISTER_BANK_0_VADDR + 0x90000)
 #define UART1 (REGISTER_BANK_0_VADDR + 0xa0000)
