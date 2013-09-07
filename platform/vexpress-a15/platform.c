@@ -45,8 +45,10 @@ void platform_early_init(void)
 	/* initialize the interrupt controller */
 	arm_gic_init();
 
+#if !WITH_LIB_SM
 	/* initialize the timer block */
 	platform_init_timer();
+#endif
 }
 
 void platform_init(void)
