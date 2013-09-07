@@ -66,6 +66,7 @@ static uint32_t read_mpidr(void)
 }
 
 #if WITH_SMP
+#define GICC_CTLR               (GICC_OFFSET + 0x0000)
 #define GICC_IAR                (GICC_OFFSET + 0x000c)
 #define GICC_EOIR               (GICC_OFFSET + 0x0010)
 
@@ -78,6 +79,10 @@ static void platform_secondary_init(uint level)
 		dprintf(INFO, "bad interrupt number on secondary CPU: %x\n", val);
 	*REG32(GICBASE(0) + GICC_EOIR) = val & 0x3ff;
 	arm_gic_init_secondary_cpu();
+
+#if WITH_LIB_SM
+	*REG32(GICBASE(0) + GICC_CTLR) |= 2; /* Enable ns interrupts */
+#endif
 }
 
 LK_INIT_HOOK_FLAGS(vexpress_a15, platform_secondary_init, LK_INIT_LEVEL_PLATFORM, LK_INIT_FLAG_SECONDARY_CPUS);

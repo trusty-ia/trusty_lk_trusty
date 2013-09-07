@@ -23,6 +23,9 @@
 
 #include <asm.h>
 #include <platform/vexpress-a15.h>
+#if WITH_LIB_SM
+#include <lib/sm/monitor.h>
+#endif
 
 .section ".text"
 
@@ -36,6 +39,13 @@ FUNCTION(platform_secondary_entry)
 	beq	1b
 	tst	r2, r2
 	beq	1b
+
+#if WITH_LIB_SM
+	/* Switch to monitor mode */
+	cps	#MODE_MON
+
+	SWITCH_SCR_TO_NONSECURE	r3
+#endif
 
 	mov	r3, #0x93 /* svc mode with IRQ disabled */
 	msr	spsr_cfsx, r3
