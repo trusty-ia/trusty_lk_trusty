@@ -46,5 +46,10 @@ status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn)
 /* Handle an interrupt */
 enum handler_return sm_handle_irq(void);
 
+/* Interrupt controller fiq support */
+status_t smc_intc_request_fiq(uint32_t smc_nr, u_int fiq, bool enable);
+status_t sm_intc_fiq_enter(void); /* return 0 to enter ns-fiq handler, return non-0 to return */
+void sm_intc_fiq_exit(void);
+
 #endif /* __SM_H */
 

@@ -91,7 +91,7 @@ monitor_vector_table:
 	b	.			/* DABORT	*/
 	nop				/* reserved	*/
 	b	.			/* IRQ		*/
-	b	.			/* FIQ		*/
+	b	mon_fiq_entry		/* FIQ		*/
 
 /* Secure monitor call
  * r0    = SMC call number
@@ -121,6 +121,96 @@ FUNCTION(sm_boot_ns)
 	pop	{r0-r3}
 #endif
 	rfefd	sp!
+
+mon_fiq_from_secure:
+	pop	{r0-r3}
+	sub	lr, lr, #4
+	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
+	push	{r0-r4, ip}
+	mov	r1, #SM_ERR_INTERRUPTED
+1:
+	blx	smc_go_nonsecure
+	cmp	r0, #0
+	movne	r1, #SM_ERR_INTERLEAVED_SMC
+	bne	1b
+	pop	{r0-r4, ip}
+	rfefd	sp!
+
+mon_fiq_entry:
+	push	{r0-r3}
+
+	mrc	p15, 0, r0, c1, c1, 0	/* r0 = SCR */
+	tst	r0, #0x1
+	beq	mon_fiq_from_secure
+
+	push	{ip, lr}
+	ldr	ip, =sm_intc_fiq_enter
+	blx	ip
+	pop	{ip, lr}
+
+	cmp	r0, #0
+	subne	lr, lr, #4
+	bne	mon_fiq_return
+
+	mrc	p15, 0, r3, c1, c0, 0	/* r3 = Non-secure SCTLR */
+
+	SWITCH_SCR_TO_SECURE r2
+
+	mrs	r0, spsr
+	mov	r1, lr
+
+	mov	r2, #0x91 /* fiq mode with IRQ disabled */
+	msr	spsr_cfsx, r2
+
+	tst	r3, #(1 << 13) /* Non-secure SCTLR.V */
+	ldrne	lr, =0xffff0000
+	mrceq	p15, 0, lr, c12, c0, 0 /* lr = VBAR (if not using Hivecs) */
+	add	lr, lr, #0x1c /* fiq vector offset */
+
+	/* Set fiq mode lr and spsr */
+	cps	#MODE_FIQ
+	msr	spsr_cfsx, r0
+	mov	lr, r1
+	cps	#MODE_MON
+
+	SWITCH_SCR_TO_NONSECURE r2
+
+mon_fiq_return:
+	pop	{r0-r3}
+	movs	pc, lr
+
+FUNCTION(smc_fiq_exit)
+	/* If called from secure, return */
+	mrc	p15, 0, r0, c1, c1, 0	/* r0 = SCR */
+	tst	r0, #0x1
+	bxeq	lr
+
+	/* Remove stack frame created by arm_smcall since we will not return there */
+	add	sp, sp, #8
+
+	stmfd	sp!, {r1-r3, ip}
+
+	SWITCH_SCR_TO_SECURE r3
+
+	ldr	ip, =sm_intc_fiq_exit
+	blx	ip
+
+	/* Retrieve FIQ mode spsr, lr and restore r0 from FIQ mode r11 */
+	cps	#MODE_FIQ
+
+	mov	r0, r11 /* restore r0 used for smc number */
+	mrs	r1, spsr
+	mov	r2, lr
+
+	cps	#MODE_MON
+
+	mov	lr, r2
+	msr	spsr_cfsx, r1
+
+	SWITCH_SCR_TO_NONSECURE r3
+
+	ldmfd	sp!, {r1-r3, ip}
+	movs	pc, lr
 
 FUNCTION(platform_reset)
 	cps	#MODE_MON

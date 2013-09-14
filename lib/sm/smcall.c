@@ -37,6 +37,7 @@
 
 /* Defined elsewhere */
 long smc_go_nonsecure(uint32_t smc_nr, uint32_t retval);
+long smc_fiq_exit(uint32_t r0, uint32_t r1, uint32_t r2, uint32_t r3);
 
 static long smc_undefined(uint32_t smc_nr, uint32_t arg0,
 		uint32_t arg1, uint32_t arg2)
@@ -81,6 +82,8 @@ const unsigned long smcall_table [] = {
 	DEF_SMCALL(1, go_nonsecure, ns_args_t*, 2)
 	DEF_SMCALL(2, restart_last, long, 1)
 	DEF_SMCALL(3, trusted_service, long, 4)
+	DEF_SMCALL(4, intc_request_fiq, status_t, 2, u_int fiq, bool enable)
+	DEF_SMCALL(5, fiq_exit, long, 4)
 
 #ifdef WITH_SMCALL_TABLE
 #include <smcall_table.h>

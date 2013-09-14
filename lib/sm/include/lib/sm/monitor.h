@@ -35,8 +35,8 @@
 #define SMC_GO_NONSECURE	0x1
 
 /* SCR values for secure and non-secure modes */
-#define SM_SCR_NONSECURE	0x1
-#define SM_SCR_SECURE		0x0
+#define SM_SCR_NONSECURE	0x5
+#define SM_SCR_SECURE		0x4
 
 /* sets SCR.NS bit to 1 (assumes monitor mode) */
 .macro SWITCH_SCR_TO_NONSECURE, tmp
