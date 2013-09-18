@@ -21,10 +21,14 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <lib/trusty.h>
 #include <lib/trusty/trusty_app.h>
+#include <lk/init.h>
+#include <stdio.h>
 
-void trusty_init(void)
+static void trusty_init(uint level)
 {
+	printf("initializing trusty\n");
 	trusty_app_init();
 }
+
+LK_INIT_HOOK(libtrusty, trusty_init, LK_INIT_LEVEL_APPS - 1);
