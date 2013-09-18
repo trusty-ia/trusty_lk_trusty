@@ -125,9 +125,6 @@ enum
 #define UT_MAP_ALIGN_1MB	(1UL * 1024 * 1024)
 #define UT_MAP_ALIGN_DEFAULT	UT_MAP_ALIGN_4KB
 
-/* Initialize the uthread library */
-void uthread_init(void);
-
 /* Create a new user thread */
 uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 		vaddr_t stack_top, size_t stack_size, void *private_data);

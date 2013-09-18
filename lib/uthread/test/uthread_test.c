@@ -32,7 +32,6 @@ void uthread_test(void)
 	status_t err;
 	vaddr_t entry = 0x8000;
 
-	uthread_init();
 	uthread_t *ut1 = uthread_create("test_ut1", 0x8000,
 				DEFAULT_PRIORITY, 0x1000000, 4096, NULL);
 

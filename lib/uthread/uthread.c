@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <compiler.h>
 #include <assert.h>
+#include <lk/init.h>
 
 /* Global list of all userspace threads */
 static struct list_node uthread_list;
@@ -137,12 +138,6 @@ static void uthread_free_maps(uthread_t *ut)
 		list_delete(&mp->node);
 		free(mp);
 	}
-}
-
-void uthread_init(void)
-{
-	list_initialize(&uthread_list);
-	arch_uthread_init();
 }
 
 uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
@@ -286,3 +281,13 @@ done:
 	return err;
 }
 
+static void uthread_init(uint level)
+{
+	list_initialize(&uthread_list);
+	arch_uthread_init();
+}
+
+/* this has to come up early because we have to reinitialize the MMU on
+ * some arch's
+ */
+LK_INIT_HOOK(libuthread, uthread_init, LK_INIT_LEVEL_ARCH_EARLY);
