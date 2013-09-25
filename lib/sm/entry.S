@@ -23,6 +23,7 @@
 
 #include <asm.h>
 #include <lib/sm/monitor.h>
+#include <lib/sm/sm_err.h>
 
 .macro SAVE_CONTEXT
 	push	{r4-r11, lr}
@@ -113,6 +114,12 @@ FUNCTION(arm_smcall)
 
 FUNCTION(sm_boot_ns)
 	SWITCH_SCR_TO_NONSECURE ip
+#if WITH_SMP
+	push	{r0-r3}
+	ldr	r0, =secondary_boot_lock
+	blx	spin_unlock
+	pop	{r0-r3}
+#endif
 	rfefd	sp!
 
 FUNCTION(platform_reset)
@@ -179,7 +186,15 @@ FUNCTION(sm_context_switch)
 
 /* long sm_sched_secure(ns_args_t *ns_args) */
 FUNCTION(sm_sched_secure)
-
+#if WITH_SMP
+	push	{r0-r1, ip, lr}
+	ldr	r0, =secondary_boot_lock
+	blx	spin_trylock
+	cmp	r0, #0
+	pop	{r0-r1, ip, lr}
+	movne	r0, #SM_ERR_BUSY
+	bne	sm_sched_secure_busy
+#endif
 	SWITCH_SCR_TO_SECURE r1
 	/* Context switch to secure */
 	ldr	r2, =mon_ns_sp
@@ -189,6 +204,15 @@ FUNCTION(sm_sched_secure)
 	bl	sm_context_switch
 	pop	{ip, lr}
 	SWITCH_SCR_TO_NONSECURE ip
+
+#if WITH_SMP
+	push	{r0, lr}
+	ldr	r0, =secondary_boot_lock
+	blx	spin_unlock
+	pop	{r0, lr}
+#endif
+
+sm_sched_secure_busy:
 	/* clear scratch registers for security */
 	mov	r1, #0
 	mov	r2, #0
