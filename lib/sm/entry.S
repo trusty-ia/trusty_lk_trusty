@@ -137,8 +137,8 @@ FUNCTION(platform_reset)
 	sub	sp, sp, ip	/* sp = sp vaddr */
 	str	sp, [lr]
 
-	/* Switch to S thread in monitor */
-	ldr	sp, =mon_s_stack_top
+	/* Switch to S thread in monitor, stack will be allocated later */
+	ldr	sp, =0
 
 	/* Initialize NS mode CPU context registers */
 	mrc	p15, 0, r4, c12, c0, 0	/* r4 = VBAR */
@@ -220,6 +220,12 @@ FUNCTION(sm_sched_nonsecure)
 	smc	#0
 	bx	lr
 
+FUNCTION(sm_set_mon_stack)
+	cps	#MODE_MON
+	mov	sp, r0
+	cps	MODE_SVC
+	bx	lr
+
 .data
 .align 3
 LOCAL_DATA(mon_ns_stack)
@@ -227,10 +233,5 @@ LOCAL_DATA(mon_ns_stack)
 DATA(mon_ns_stack_top)
 LOCAL_DATA(mon_ns_sp)
 	.long	0
-
-.align 3
-LOCAL_DATA(mon_s_stack)
-	.skip	1024
-DATA(mon_s_stack_top)
 LOCAL_DATA(mon_s_sp)
 	.long 0

@@ -23,10 +23,13 @@
 
 #include <err.h>
 #include <kernel/thread.h>
+#include <lib/heap.h>
 #include <lib/sm.h>
 #include <lib/sm/sm_err.h>
 #include <lk/init.h>
 #include <sys/types.h>
+
+void sm_set_mon_stack(void *stack);
 
 extern unsigned long monitor_vector_table;
 static trusted_service_handler_routine ts_handler;
@@ -66,6 +69,15 @@ static void sm_wait_for_smcall(void)
 /* per-cpu secure monitor initialization */
 void sm_secondary_init(void)
 {
+	const size_t stack_size = 4096;
+	void *mon_stack;
+
+	mon_stack = heap_alloc(stack_size, 8);
+	if (!mon_stack)
+		dprintf(CRITICAL, "failed to allocate monitor mode stack!\n");
+	else
+		sm_set_mon_stack(mon_stack + stack_size);
+
 	/* let normal world enable SMP, lock TLB, access CP10/11 */
 	__asm__ volatile (
 		"mrc	p15, 0, r1, c1, c1, 2	\n"
