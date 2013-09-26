@@ -6,13 +6,10 @@ extensions.
 
 API:
 
-sm_init() - Initialize secure monitor mode
 sm_sched_secure() - Switch to Secure OS
 sm_sched_nonsecure() - Switch to Nonsecure OS
 
 Usage:
-
-- Call sm_init() at some point during Secure OS initialization.
 
 - Provide a table in smcall_table.h accessible from global include path.
 

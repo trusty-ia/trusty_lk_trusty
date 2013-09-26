@@ -37,9 +37,6 @@ typedef long (*trusted_service_handler_routine)(ts_args_t *args);
 /* Initialize secure monitor on a secondary cpu */
 void sm_secondary_init(void);
 
-/* Initialize Secure monitor library */
-void sm_init(void);
-
 /* Schedule Secure OS */
 long sm_sched_secure(ts_args_t *ts_args);
 

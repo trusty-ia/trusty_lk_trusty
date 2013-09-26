@@ -24,6 +24,7 @@
 #include <err.h>
 #include <kernel/thread.h>
 #include <lib/sm.h>
+#include <lk/init.h>
 #include <sys/types.h>
 
 extern unsigned long monitor_vector_table;
@@ -79,7 +80,7 @@ void sm_secondary_init(void)
 	);
 }
 
-void sm_init(void)
+static void sm_init(uint level)
 {
 	sm_secondary_init();
 
@@ -94,6 +95,8 @@ void sm_init(void)
 
 	thread_resume(nsthread);
 }
+
+LK_INIT_HOOK(libsm, sm_init, LK_INIT_LEVEL_PLATFORM - 1);
 
 status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn)
 {
