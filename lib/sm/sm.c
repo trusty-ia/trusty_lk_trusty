@@ -67,7 +67,7 @@ static void sm_wait_for_smcall(void)
 }
 
 /* per-cpu secure monitor initialization */
-void sm_secondary_init(void)
+static void sm_secondary_init(uint level)
 {
 	const size_t stack_size = 4096;
 	void *mon_stack;
@@ -93,10 +93,10 @@ void sm_secondary_init(void)
 	);
 }
 
+LK_INIT_HOOK_FLAGS(libsm_cpu, sm_secondary_init, LK_INIT_LEVEL_PLATFORM - 2, LK_INIT_FLAG_ALL_CPUS);
+
 static void sm_init(uint level)
 {
-	sm_secondary_init();
-
 	thread_t *nsthread = thread_create("ns-switch",
 				(thread_start_routine)sm_wait_for_smcall,
 				NULL, LOWEST_PRIORITY + 1, DEFAULT_STACK_SIZE);
