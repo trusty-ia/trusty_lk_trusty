@@ -42,7 +42,7 @@ static void sm_wait_for_smcall(void)
 		ns_args = sm_sched_nonsecure(ret);
 
 		if (!ns_args) {
-			ret = ERR_NOT_VALID;
+			ret = SM_ERR_UNEXPECTED_RESTART;
 			exit_critical_section();
 			continue;
 		}
@@ -57,7 +57,7 @@ static void sm_wait_for_smcall(void)
 		else {
 			dprintf(CRITICAL,
 				"No service handler registered!\n");
-			ret = ERR_NOT_SUPPORTED;
+			ret = SM_ERR_NOT_SUPPORTED;
 		}
 	}
 }

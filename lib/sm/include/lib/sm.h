@@ -23,6 +23,16 @@
 #ifndef __SM_H
 #define __SM_H
 
+/* Errors from the monitor */
+#define SM_ERR_NOT_SUPPORTED		-1
+#define SM_ERR_INVALID_PARAMETERS	-2
+#define SM_ERR_INTERRUPTED		-3	/* Got interrupted. Call back with restart SMC */
+#define SM_ERR_UNEXPECTED_RESTART	-4	/* Got an restart SMC when we didn't expect it */
+#define SM_ERR_BUSY			-5	/* Temporarily busy. Call back with original args */
+#define SM_ERR_INTERLEAVED_SMC		-6	/* Got a trusted_service SMC when a restart SMC is required */
+#define SM_ERR_INTERNAL_FAILURE		-7	/* Unknown error */
+
+#ifndef ASSEMBLY
 #include <sys/types.h>
 
 typedef struct ts_args {
@@ -45,5 +55,7 @@ ts_args_t *sm_sched_nonsecure(long retval);
 
 /* Register a service handler for the trusted_service smc */
 status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn);
-#endif
+
+#endif /* ASSEMBLY */
+#endif /* __SM_H */
 
