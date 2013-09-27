@@ -109,3 +109,14 @@ status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn)
 
 	return NO_ERROR;
 }
+
+enum handler_return sm_handle_irq(void)
+{
+	ts_args_t *args;
+
+	args = sm_sched_nonsecure(SM_ERR_INTERRUPTED);
+	while(args)
+		args = sm_sched_nonsecure(SM_ERR_INTERLEAVED_SMC);
+
+	return INT_NO_RESCHEDULE;
+}

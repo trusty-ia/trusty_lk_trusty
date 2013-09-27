@@ -56,6 +56,9 @@ ts_args_t *sm_sched_nonsecure(long retval);
 /* Register a service handler for the trusted_service smc */
 status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn);
 
+/* Handle an interrupt */
+enum handler_return sm_handle_irq(void);
+
 #endif /* ASSEMBLY */
 #endif /* __SM_H */
 
