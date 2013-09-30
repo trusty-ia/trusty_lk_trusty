@@ -24,6 +24,7 @@
 #include <err.h>
 #include <kernel/thread.h>
 #include <lib/sm.h>
+#include <lib/sm/sm_err.h>
 #include <lk/init.h>
 #include <sys/types.h>
 

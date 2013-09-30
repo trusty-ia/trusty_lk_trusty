@@ -20,34 +20,16 @@
  * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef __SM_H
-#define __SM_H
+#ifndef __LIB_SM_SM_ERR_H
+#define __LIB_SM_SM_ERR_H
 
-#include <sys/types.h>
+/* Errors from the secure monitor */
+#define SM_ERR_NOT_SUPPORTED		-1
+#define SM_ERR_INVALID_PARAMETERS	-2
+#define SM_ERR_INTERRUPTED		-3	/* Got interrupted. Call back with restart SMC */
+#define SM_ERR_UNEXPECTED_RESTART	-4	/* Got an restart SMC when we didn't expect it */
+#define SM_ERR_BUSY			-5	/* Temporarily busy. Call back with original args */
+#define SM_ERR_INTERLEAVED_SMC		-6	/* Got a trusted_service SMC when a restart SMC is required */
+#define SM_ERR_INTERNAL_FAILURE		-7	/* Unknown error */
 
-typedef struct ts_args {
-	uint32_t smc_nr;
-	uint32_t arg0;
-	uint32_t arg1;
-	uint32_t arg2;
-} ts_args_t;
-
-typedef long (*trusted_service_handler_routine)(ts_args_t *args);
-
-/* Initialize secure monitor on a secondary cpu */
-void sm_secondary_init(void);
-
-/* Schedule Secure OS */
-long sm_sched_secure(ts_args_t *ts_args);
-
-/* Schedule Non-secure OS */
-ts_args_t *sm_sched_nonsecure(long retval);
-
-/* Register a service handler for the trusted_service smc */
-status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn);
-
-/* Handle an interrupt */
-enum handler_return sm_handle_irq(void);
-
-#endif /* __SM_H */
-
+#endif
