@@ -33,8 +33,15 @@
 #include <platform/vexpress-a15.h>
 #include "platform_p.h"
 
+#if WITH_LIB_KMAP
+#include <lib/kmap.h>
+#endif
+
 void platform_init_mmu_mappings(void)
 {
+#if WITH_LIB_KMAP
+	kmap_set_valloc_range(0x60000000, 0x70000000);
+#endif
 #if WITH_MMU_RELOC
 	arm_mmu_map_section(REGISTER_BANK_0_PADDR, REGISTER_BANK_0_VADDR,
 		MMU_MEMORY_L1_TYPE_DEVICE_SHARED | MMU_MEMORY_L1_AP_P_RW_U_NA);
