@@ -134,6 +134,7 @@ status_t arm_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr)
 {
 	uint32_t *page_table;
 	u_int *level_2;
+	paddr_t level_2_paddr;
 	u_int idx;
 	status_t err = NO_ERROR;
 
@@ -146,10 +147,13 @@ status_t arm_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr)
 	idx = vaddr >> 20;
 	idx &= MMU_MEMORY_TTBR0_L1_INDEX_MASK;
 
-	level_2 = (u_int *)(page_table[idx] & ~(MMU_MEMORY_TTBR_L2_SIZE - 1));
-	if (!level_2) {
+	level_2_paddr = page_table[idx] & ~(MMU_MEMORY_TTBR_L2_SIZE - 1);
+	if (!level_2_paddr) {
 		err = ERR_INVALID_ARGS;
 		goto done;
+	}
+	else {
+		level_2 = paddr_to_kvaddr(level_2_paddr);
 	}
 
 	idx = vaddr >> 12;
