@@ -1,0 +1,5 @@
+libkmap
+==
+
+Kernel virtual address allocator and mapping library.
+
