@@ -77,7 +77,7 @@ long sys_brk(u_int brk)
 
 long sys_exit_group(void)
 {
-	thread_exit(0);
+	uthread_exit(0);
 	return 0L;
 }
 
