@@ -52,5 +52,11 @@ status_t smc_intc_request_fiq(uint32_t smc_nr, u_int fiq, bool enable);
 status_t sm_intc_fiq_enter(void); /* return 0 to enter ns-fiq handler, return non-0 to return */
 void sm_intc_fiq_exit(void);
 
+/* Get the argument block passed in by the bootloader */
+status_t sm_get_boot_args(void **boot_argsp, size_t *args_sizep);
+
+/* Release bootloader arg block */
+void sm_put_boot_args(void);
+
 #endif /* __SM_H */
 

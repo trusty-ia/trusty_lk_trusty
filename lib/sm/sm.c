@@ -22,8 +22,11 @@
  */
 
 #include <err.h>
+#include <trace.h>
+#include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <lib/heap.h>
+#include <lib/kmap.h>
 #include <lib/sm.h>
 #include <lib/sm/sm_err.h>
 #include <lk/init.h>
@@ -33,6 +36,12 @@ void sm_set_mon_stack(void *stack);
 
 extern unsigned long monitor_vector_table;
 static trusted_service_handler_routine ts_handler;
+
+extern long sm_platform_boot_args[2];
+static void *boot_args;
+static int boot_args_refcnt;
+static mutex_t boot_args_lock = MUTEX_INITIAL_VALUE(boot_args_lock);
+static thread_t *nsthread;
 
 static void sm_wait_for_smcall(void)
 {
@@ -97,16 +106,35 @@ LK_INIT_HOOK_FLAGS(libsm_cpu, sm_secondary_init, LK_INIT_LEVEL_PLATFORM - 2, LK_
 
 static void sm_init(uint level)
 {
-	thread_t *nsthread = thread_create("ns-switch",
-				(thread_start_routine)sm_wait_for_smcall,
-				NULL, LOWEST_PRIORITY + 1, DEFAULT_STACK_SIZE);
+	status_t err;
 
+	mutex_acquire(&boot_args_lock);
+
+	/* Map the boot arguments if supplied by the bootloader */
+	if (sm_platform_boot_args[0] && sm_platform_boot_args[1]) {
+		err = kmap_contig(sm_platform_boot_args[0],
+				sm_platform_boot_args[1],
+				KM_R | KM_NS_MEM,
+				PAGE_SIZE_1M,
+				(vaddr_t *)&boot_args);
+
+		if (!err) {
+			boot_args_refcnt++;
+		} else {
+			boot_args = NULL;
+			TRACEF("Error mapping boot parameter block: %d\n", err);
+		}
+	}
+
+	mutex_release(&boot_args_lock);
+
+	nsthread = thread_create("ns-switch",
+			(thread_start_routine)sm_wait_for_smcall,
+			NULL, LOWEST_PRIORITY + 1, DEFAULT_STACK_SIZE);
 	if (!nsthread) {
 		dprintf(CRITICAL, "failed to create NS switcher thread!\n");
 		halt();
 	}
-
-	thread_resume(nsthread);
 }
 
 LK_INIT_HOOK(libsm, sm_init, LK_INIT_LEVEL_PLATFORM - 1);
@@ -133,3 +161,63 @@ enum handler_return sm_handle_irq(void)
 
 	return INT_NO_RESCHEDULE;
 }
+
+status_t sm_get_boot_args(void **boot_argsp, size_t *args_sizep)
+{
+	status_t err = NO_ERROR;
+
+	if (!boot_argsp || !args_sizep)
+		return ERR_INVALID_ARGS;
+
+	mutex_acquire(&boot_args_lock);
+
+	if (!boot_args) {
+		err = ERR_NOT_CONFIGURED;
+		goto unlock;
+	}
+
+	boot_args_refcnt++;
+	*boot_argsp = boot_args;
+	*args_sizep = sm_platform_boot_args[1];
+unlock:
+	mutex_release(&boot_args_lock);
+	return err;
+}
+
+void sm_put_boot_args(void)
+{
+	mutex_acquire(&boot_args_lock);
+
+	if (!boot_args) {
+		TRACEF("WARNING: caller does not own "
+			"a reference to boot parameters\n");
+		goto unlock;
+	}
+
+	boot_args_refcnt--;
+	if (boot_args_refcnt == 0) {
+		kunmap((vaddr_t)boot_args, sm_platform_boot_args[1]);
+		boot_args = NULL;
+		thread_resume(nsthread);
+	}
+unlock:
+	mutex_release(&boot_args_lock);
+}
+
+static void sm_release_boot_args(uint level)
+{
+	if (boot_args) {
+		sm_put_boot_args();
+	} else {
+		/* we need to resume the ns-switcher here if
+		 * the boot loader didn't pass bootargs
+		 */
+		thread_resume(nsthread);
+	}
+
+	if (boot_args)
+		TRACEF("WARNING: outstanding reference to boot args"
+				"at the end of initialzation!\n");
+}
+
+LK_INIT_HOOK(libsm_bootargs, sm_release_boot_args, LK_INIT_LEVEL_LAST);

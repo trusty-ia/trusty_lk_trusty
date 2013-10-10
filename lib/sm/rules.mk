@@ -10,4 +10,7 @@ MODULE_ARM_OVERRIDE_SRCS += \
 	$(LOCAL_DIR)/sm.c \
 	$(LOCAL_DIR)/smcall.c \
 
+MODULE_DEPS += \
+	lib/kmap \
+
 include make/module.mk

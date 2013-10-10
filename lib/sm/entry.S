@@ -262,6 +262,14 @@ FUNCTION(platform_reset)
 	add	r5, r5, ip	/* r5 = _heap_end paddr */
 	str	r4, [r5]
 
+	/* Save platform boot args.
+	 * r1 = paddr of argument block
+	 * r2 = size of argument block
+	 */
+	ldr	r4, =sm_platform_boot_args
+	add	r4, r4, ip	/* translate to paddr */
+	stmia	r4, {r1-r2}
+
 	cps	#MODE_SVC
 	b	arm_reset
 
@@ -349,3 +357,6 @@ LOCAL_DATA(mon_ns_sp)
 	.long	0
 LOCAL_DATA(mon_s_sp)
 	.long 0
+DATA(sm_platform_boot_args)
+	.long 0		/* Address of arg block */
+	.long 0		/* Size of arg block */
