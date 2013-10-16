@@ -25,30 +25,31 @@
 
 #include <stdbool.h>
 #include <sys/types.h>
+#include <lib/sm/smcall.h>
 
-typedef struct ts_args {
+typedef struct smc32_args {
 	uint32_t smc_nr;
-	uint32_t arg0;
-	uint32_t arg1;
-	uint32_t arg2;
-} ts_args_t;
+	uint32_t params[SMC_NUM_PARAMS];
+} smc32_args_t;
 
-typedef long (*trusted_service_handler_routine)(ts_args_t *args);
+typedef long (*smc32_handler_t)(smc32_args_t *args);
+
+typedef struct smc32_entity {
+	smc32_handler_t fastcall_handler;
+	smc32_handler_t stdcall_handler;
+} smc32_entity_t;
 
 /* Schedule Secure OS */
-long sm_sched_secure(ts_args_t *ts_args);
+long sm_sched_secure(smc32_args_t *args);
 
 /* Schedule Non-secure OS */
-ts_args_t *sm_sched_nonsecure(long retval);
-
-/* Register a service handler for the trusted_service smc */
-status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn);
+smc32_args_t *sm_sched_nonsecure(long retval);
 
 /* Handle an interrupt */
 enum handler_return sm_handle_irq(void);
 
 /* Interrupt controller fiq support */
-status_t smc_intc_request_fiq(uint32_t smc_nr, u_int fiq, bool enable);
+long smc_intc_request_fiq(smc32_args_t *args);
 status_t sm_intc_fiq_enter(void); /* return 0 to enter ns-fiq handler, return non-0 to return */
 void sm_intc_fiq_exit(void);
 
@@ -57,6 +58,9 @@ status_t sm_get_boot_args(void **boot_argsp, size_t *args_sizep);
 
 /* Release bootloader arg block */
 void sm_put_boot_args(void);
+
+/* Register handler(s) for an entity */
+status_t sm_register_entity(uint entity_nr, smc32_entity_t *entity);
 
 #endif /* __SM_H */
 

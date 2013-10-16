@@ -6,28 +6,15 @@ extensions.
 
 API:
 
-sm_sched_secure() - Switch to Secure OS
-sm_sched_nonsecure() - Switch to Nonsecure OS
+sm_sched_secure - Switch to Secure OS
+sm_sched_nonsecure - Switch to Nonsecure OS
 
-Usage:
+sm_register_entity - Register fastcall/stdcall handlers for an entity
+(See ARM document DEN 0028A)
 
-- Provide a table in smcall_table.h accessible from global include path.
-
-  The table contains DEF_SMCALL() macros specifying various attributes of an
-  SMC call handler. See smcall.c for more details.
-
-- Provide implementations for call handlers defined in the above step.
-
-  [All handlers execute in monitor mode with interrupts turned off]
-
-- When the Secure OS is done initializing, libsm automatically returns to the
-  bootloader in the Non-secure world context.
-
-- If an SMC handler needs secure OS services, call sm_sched_secure() to context
-  switch out into the secure OS kernel with interrupts enabled.
-
-- If an NS IRQ occurs during Secure OS execution invoke
-  sm_sched_nonsecure() directly from the IRQ handler with a special return code.
+sm_get_boot_args - get a pointer/reference to boot parameter block
+sm_put_boot_args - release a reference to boot parameter block
+(See bootloader spec)
 
 Note that this library provides an implementation for the weak symbol
 "platform_reset". It also assumes that r0 contains the size of memory reserved

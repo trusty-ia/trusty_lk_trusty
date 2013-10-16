@@ -28,6 +28,7 @@
 #include <lib/heap.h>
 #include <lib/kmap.h>
 #include <lib/sm.h>
+#include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
 #include <lk/init.h>
 #include <sys/types.h>
@@ -35,18 +36,20 @@
 void sm_set_mon_stack(void *stack);
 
 extern unsigned long monitor_vector_table;
-static trusted_service_handler_routine ts_handler;
-
 extern long sm_platform_boot_args[2];
+
 static void *boot_args;
 static int boot_args_refcnt;
 static mutex_t boot_args_lock = MUTEX_INITIAL_VALUE(boot_args_lock);
 static thread_t *nsthread;
 
+extern smc32_handler_t sm_stdcall_table[];
+
 static void sm_wait_for_smcall(void)
 {
 	long ret = 0;
-	ts_args_t *ns_args, args;
+	smc32_args_t *ns_args;
+	smc32_args_t args;
 
 	while (true) {
 		enter_critical_section();
@@ -54,24 +57,12 @@ static void sm_wait_for_smcall(void)
 		thread_yield();
 		ns_args = sm_sched_nonsecure(ret);
 
-		if (!ns_args) {
-			ret = SM_ERR_UNEXPECTED_RESTART;
-			exit_critical_section();
-			continue;
-		}
-
 		/* Pull args out before enabling interrupts */
 		args = *ns_args;
 		exit_critical_section();
 
-		/* Dispatch service handler */
-		if (ts_handler)
-			ret = ts_handler(&args);
-		else {
-			dprintf(CRITICAL,
-				"No service handler registered!\n");
-			ret = SM_ERR_NOT_SUPPORTED;
-		}
+		/* Dispatch 'standard call' handler */
+		ret = sm_stdcall_table[SMC_ENTITY(args.smc_nr)](&args);
 	}
 }
 
@@ -139,24 +130,12 @@ static void sm_init(uint level)
 
 LK_INIT_HOOK(libsm, sm_init, LK_INIT_LEVEL_PLATFORM - 1);
 
-status_t sm_register_trusted_service_handler(trusted_service_handler_routine fn)
-{
-	if (ts_handler)
-		return ERR_ALREADY_EXISTS;
-
-	enter_critical_section();
-	ts_handler = fn;
-	exit_critical_section();
-
-	return NO_ERROR;
-}
-
 enum handler_return sm_handle_irq(void)
 {
-	ts_args_t *args;
+	smc32_args_t *args;
 
 	args = sm_sched_nonsecure(SM_ERR_INTERRUPTED);
-	while(args)
+	while (args->smc_nr != SMC_SC_RESTART_LAST)
 		args = sm_sched_nonsecure(SM_ERR_INTERLEAVED_SMC);
 
 	return INT_NO_RESCHEDULE;

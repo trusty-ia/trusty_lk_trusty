@@ -23,6 +23,7 @@
 
 #include <asm.h>
 #include <lib/sm/monitor.h>
+#include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
 
 .macro SAVE_CONTEXT
@@ -101,15 +102,22 @@ monitor_vector_table:
 FUNCTION(arm_smcall)
 	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
 
-	/* Dispatch SMC handler */
-	ldr	r14, =nr_smcalls
-	ldr	r14, [r14]
-	cmp	r0, r14
+	tst	r0, #(1 << 30)		/* Check calling convention */
+	movne	r0, #SM_ERR_NOT_SUPPORTED
+	bne	1f
 
-	ldr	r14, =smcall_table
-	addlo	r14, r14, r0, lsl#2
-	ldr	r14, [r14]
+	push	{r0-r3}
+	tst	r0, #(1 << 31)		/* Check if fastcall */
+	ldreq	r14, =sm_sched_secure	/* handle stdcall */
+
+	ubfxne	r0, r0, #24, #6		/* r0 = entity */
+	ldrne	r14, =sm_fastcall_table
+	ldrne	r14, [r14, r0, lsl #2]
+
+	mov	r0, sp			/* r0 = smc_args_t* args */
 	blx	r14
+	add	sp, #(4 * SMC_NUM_ARGS)
+1:
 	rfefd	sp!
 
 FUNCTION(sm_boot_ns)
@@ -127,11 +135,13 @@ mon_fiq_from_secure:
 	sub	lr, lr, #4
 	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
 	push	{r0-r4, ip}
-	mov	r1, #SM_ERR_INTERRUPTED
+	mov	r0, #SM_ERR_INTERRUPTED
 1:
-	blx	smc_go_nonsecure
-	cmp	r0, #0
-	movne	r1, #SM_ERR_INTERLEAVED_SMC
+	bl	go_nonsecure
+	ldr	r0, [r0]	/* r0 = args->smc_nr */
+	ldr	r1, =SMC_SC_RESTART_LAST
+	cmp	r0, r1
+	movne	r0, #SM_ERR_INTERLEAVED_SMC
 	bne	1b
 	pop	{r0-r4, ip}
 	rfefd	sp!
@@ -186,6 +196,7 @@ FUNCTION(smc_fiq_exit)
 	bxeq	lr
 
 	/* Remove stack frame created by arm_smcall since we will not return there */
+	pop	{r0-r3}
 	add	sp, sp, #8
 
 	stmfd	sp!, {r1-r3, ip}
@@ -282,7 +293,7 @@ FUNCTION(sm_context_switch)
 	RESTORE_CONTEXT
 	bx	lr
 
-/* long sm_sched_secure(ns_args_t *ns_args) */
+/* long sm_sched_secure(smc32_args_t *args) */
 FUNCTION(sm_sched_secure)
 #if WITH_SMP
 	push	{r0-r1, ip, lr}
@@ -318,17 +329,18 @@ sm_sched_secure_busy:
 	mov	ip, #0
 	bx	lr
 
-/* smc_go_nonsecure(uint32_t smc_nr, uint32_t retval) */
 FUNCTION(smc_go_nonsecure)
 
 	/* If NS called this, go back */
-	mrc	p15, 0, r0, c1, c1, 0	/* r0 = SCR */
-	tst	r0, #0x1
+	mrc	p15, 0, r1, c1, c1, 0	/* r1 = SCR */
+	tst	r1, #0x1
+	movne	r0, #SM_ERR_NOT_ALLOWED
 	bxne	lr
 
-	/* Save return value */
-	mov	r0, r1
+	/* Save return value from args->params[0] */
+	ldr	r0, [r0, #4]
 
+go_nonsecure:
 	/* Context switch to nonsecure */
 	ldr	r2, =mon_s_sp
 	ldr	r3, =mon_ns_sp
@@ -338,7 +350,7 @@ FUNCTION(smc_go_nonsecure)
 /* sm_sched_nonsecure(uint32_t retval) */
 FUNCTION(sm_sched_nonsecure)
 	mov	r1, r0
-	mov	r0, #SMC_GO_NONSECURE
+	ldr	r0, =SMC_FC_GO_NONSECURE
 	smc	#0
 	bx	lr
 
@@ -348,6 +360,16 @@ FUNCTION(sm_set_mon_stack)
 	cps	MODE_SVC
 	bx	lr
 
+FUNCTION(smc_fastcall_secure_monitor)
+	ldrh	r1, [r0]	/* r1 = function# */
+	ldr	r2, =sm_nr_fastcall_functions
+	ldr	r2, [r2]
+	cmp	r1, r2
+	ldrlo	r2, =sm_fastcall_function_table
+	ldrlo	r2, [r2, r1, lsl#2]
+	rsblos	r1, r2, #1	/* This will set the same flags as the cmp above */
+	ldrhs	r2, =smc_undefined
+	bx	r2
 .data
 .align 3
 LOCAL_DATA(mon_ns_stack)

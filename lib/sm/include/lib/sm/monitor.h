@@ -32,8 +32,6 @@
 #define MODE_SYS 0x1f
 #define MODE_SVC_IRQ_DISABLED	0x93
 
-#define SMC_GO_NONSECURE	0x1
-
 /* SCR values for secure and non-secure modes */
 #define SM_SCR_NONSECURE	0x5
 #define SM_SCR_SECURE		0x4

@@ -21,75 +21,124 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-/* secure monitor call table definition
- *
- * The user of this library must:
- * - define WITH_SMCALL_TABLE
- * - provide a file named smcall_table.h in the include path
- * - provide DEF_SMCALL macros in smcall_table.h with
- *   number, name, #args followed by argument type defintions.
- * - SMC numbers must start from 0x4. The first 4 numbers are reserved.
+/* Reference:
+ * ARM document DEN 0028A: SMC CALLING CONVENTION
+ * version: 0.9.0
  */
-#include <debug.h>
+
 #include <compiler.h>
+#include <debug.h>
 #include <err.h>
+#include <trace.h>
+#include <kernel/mutex.h>
 #include <lib/sm.h>
+#include <lib/sm/smcall.h>
+#include <lib/sm/sm_err.h>
+#include <lk/init.h>
+
+#define LOCAL_TRACE	1
+
+static mutex_t smc_table_lock = MUTEX_INITIAL_VALUE(smc_table_lock);
 
 /* Defined elsewhere */
-long smc_go_nonsecure(uint32_t smc_nr, uint32_t retval);
-long smc_fiq_exit(uint32_t r0, uint32_t r1, uint32_t r2, uint32_t r3);
+long smc_go_nonsecure(smc32_args_t *args);
+long smc_fiq_exit(smc32_args_t *args);
+long smc_fastcall_secure_monitor(smc32_args_t *args);
 
-static long smc_undefined(uint32_t smc_nr, uint32_t arg0,
-		uint32_t arg1, uint32_t arg2)
+#define TRACE_SMC(msg, args)	do {			\
+	u_int _i;					\
+	LTRACEF("%s\n", msg);				\
+	LTRACEF("SMC: 0x%x (%s entity %d function 0x%x)\n", \
+			(args)->smc_nr,			\
+			SMC_IS_FASTCALL(args->smc_nr) ? "Fastcall" : "Stdcall", \
+			SMC_ENTITY(args->smc_nr), SMC_FUNCTION(args->smc_nr)); \
+	for(_i = 0; _i < SMC_NUM_PARAMS; _i++)		\
+		LTRACEF("param%d: 0x%x\n", _i, (args)->params[_i]); \
+} while (0)
+
+long smc_undefined(smc32_args_t *args)
 {
-	dprintf(CRITICAL, "Undefined SMC call 0x%x!"
-			"args: 0x%x, 0x%x, 0x%x\n", smc_nr, arg0,
-			arg1, arg2);
-	return ERR_NOT_SUPPORTED;
+	TRACE_SMC("Undefined monitor call!", args);
+	return SM_ERR_UNDEFINED_SMC;
 }
 
-static long smc_restart_last(uint32_t smc_nr)
+/* Restarts should never be dispatched like this */
+static long smc_restart_stdcall(smc32_args_t *args)
 {
-	return sm_sched_secure(NULL);
+	TRACE_SMC("Unexpected stdcall restart!", args);
+	return SM_ERR_UNEXPECTED_RESTART;
 }
 
-static long smc_trusted_service(uint32_t smc_nr, uint32_t arg0,
-		uint32_t arg1, uint32_t arg2)
-{
-	ts_args_t ts_args;
-
-	/* Push args on monitor mode stack */
-	ts_args.smc_nr = smc_nr;
-	ts_args.arg0 = arg0;
-	ts_args.arg1 = arg1;
-	ts_args.arg2 = arg2;
-
-	return sm_sched_secure(&ts_args);
-}
-
-#ifdef WITH_SMCALL_TABLE
-
-/* Generate fake function prototypes */
-#define DEF_SMCALL(nr, fn, rtype, nr_args, ...) void smc_##fn (void);
-#include <smcall_table.h>
-#undef DEF_SMCALL
-
-#endif
-
-#define DEF_SMCALL(nr, fn, rtype, nr_args, ...) [(nr)] = (unsigned long) (smc_##fn),
-const unsigned long smcall_table [] = {
-	DEF_SMCALL(0, undefined, long, 4)
-	DEF_SMCALL(1, go_nonsecure, ns_args_t*, 2)
-	DEF_SMCALL(2, restart_last, long, 1)
-	DEF_SMCALL(3, trusted_service, long, 4)
-	DEF_SMCALL(4, intc_request_fiq, status_t, 2, u_int fiq, bool enable)
-	DEF_SMCALL(5, fiq_exit, long, 4)
-
-#ifdef WITH_SMCALL_TABLE
-#include <smcall_table.h>
-#endif
-
+static smc32_handler_t sm_stdcall_function_table[] = {
+	[SMC_FUNCTION(SMC_SC_RESTART_LAST)] = smc_restart_stdcall,
 };
-#undef DEF_SMCALL
 
-unsigned long nr_smcalls = countof(smcall_table);
+static long smc_stdcall_secure_monitor(smc32_args_t *args)
+{
+	u_int function = SMC_FUNCTION(args->smc_nr);
+	smc32_handler_t handler_fn = NULL;
+
+	if (function < countof(sm_stdcall_function_table))
+		handler_fn = sm_stdcall_function_table[function];
+
+	if (!handler_fn)
+		handler_fn = smc_undefined;
+
+	return handler_fn(args);
+}
+
+smc32_handler_t sm_fastcall_function_table[] = {
+	[SMC_FUNCTION(SMC_FC_GO_NONSECURE)] = smc_go_nonsecure,
+	[SMC_FUNCTION(SMC_FC_REQUEST_FIQ)] = smc_intc_request_fiq,
+	[SMC_FUNCTION(SMC_FC_FIQ_EXIT)] = smc_fiq_exit,
+};
+
+uint32_t sm_nr_fastcall_functions = countof(sm_fastcall_function_table);
+
+/* SMC dispatch tables */
+smc32_handler_t sm_fastcall_table[SMC_NUM_ENTITIES] = {
+	[0 ... SMC_ENTITY_SECURE_MONITOR - 1] = smc_undefined,
+	[SMC_ENTITY_SECURE_MONITOR] = smc_fastcall_secure_monitor,
+	[SMC_ENTITY_SECURE_MONITOR + 1 ... SMC_NUM_ENTITIES - 1] = smc_undefined
+};
+
+smc32_handler_t sm_stdcall_table[SMC_NUM_ENTITIES] = {
+	[0 ... SMC_ENTITY_SECURE_MONITOR - 1] = smc_undefined,
+	[SMC_ENTITY_SECURE_MONITOR] = smc_stdcall_secure_monitor,
+	[SMC_ENTITY_SECURE_MONITOR + 1 ... SMC_NUM_ENTITIES - 1] = smc_undefined
+};
+
+status_t sm_register_entity(uint entity_nr, smc32_entity_t *entity)
+{
+	status_t err = NO_ERROR;
+
+	if (entity_nr >= SMC_NUM_ENTITIES)
+		return ERR_INVALID_ARGS;
+
+	if (entity_nr >= SMC_ENTITY_RESERVED && entity_nr < SMC_ENTITY_TRUSTED_APP)
+		return ERR_NOT_ALLOWED;
+
+	if (!entity)
+		return ERR_INVALID_ARGS;
+
+	if (!entity->fastcall_handler && !entity->stdcall_handler)
+		return ERR_NOT_VALID;
+
+	mutex_acquire(&smc_table_lock);
+
+	/* Check if entity is already claimed */
+	if (sm_fastcall_table[entity_nr] != smc_undefined ||
+		sm_stdcall_table[entity_nr] != smc_undefined) {
+		err = ERR_ALREADY_EXISTS;
+		goto unlock;
+	}
+
+	if (entity->fastcall_handler)
+		sm_fastcall_table[entity_nr] = entity->fastcall_handler;
+
+	if (entity->stdcall_handler)
+		sm_stdcall_table[entity_nr] = entity->stdcall_handler;
+unlock:
+	mutex_release(&smc_table_lock);
+	return err;
+}
