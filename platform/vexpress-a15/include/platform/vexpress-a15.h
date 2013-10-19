@@ -51,6 +51,7 @@
 #define GICBASE(n) (GIC0 + (n) * 0x10000)
 
 /* interrupts */
+#define ARM_GENERIC_TIMER_INT 29
 #define TIMER01_INT 34
 #define TIMER23_INT 35
 #define UART0_INT 37

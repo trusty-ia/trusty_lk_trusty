@@ -11,14 +11,14 @@ GLOBAL_INCLUDES += \
 MODULE_SRCS += \
 	$(LOCAL_DIR)/debug.c \
 	$(LOCAL_DIR)/platform.c \
-	$(LOCAL_DIR)/secondary_boot.S \
-	$(LOCAL_DIR)/timer.c
+	$(LOCAL_DIR)/secondary_boot.S
 
 MEMBASE := 0x80000000
 MEMSIZE := 0x10000000	# 256MB
 
 MODULE_DEPS += \
-	dev/interrupt/arm_gic
+	dev/interrupt/arm_gic \
+	dev/timer/arm_generic
 
 GLOBAL_DEFINES += \
 	MEMBASE=$(MEMBASE) \

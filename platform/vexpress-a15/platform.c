@@ -27,9 +27,11 @@
 #include <err.h>
 #include <debug.h>
 #include <dev/interrupt/arm_gic.h>
+#include <dev/timer/arm_generic.h>
 #include <lk/init.h>
 #include <platform.h>
 #include <platform/gic.h>
+#include <platform/interrupts.h>
 #include <platform/vexpress-a15.h>
 #include "platform_p.h"
 
@@ -57,10 +59,8 @@ void platform_early_init(void)
 	/* initialize the interrupt controller */
 	arm_gic_init();
 
-#if !WITH_LIB_SM
 	/* initialize the timer block */
-	platform_init_timer();
-#endif
+	arm_generic_timer_init(ARM_GENERIC_TIMER_INT);
 }
 
 static uint32_t read_mpidr(void)
