@@ -341,11 +341,37 @@ FUNCTION(smc_go_nonsecure)
 	ldr	r0, [r0, #4]
 
 go_nonsecure:
+	/* Save secure only state, in case we return on a different cpu */
+#if WITH_LIB_UTHREAD
+	mrc	p15, 0, r1, c13, c0, 1	/* r1 = CONTEXTIDR */
+	mrrc	p15, 0, r2, r3, c2	/* r2,r3 = TTBR0 */
+	push	{r1, r2, r3, lr}
+#endif
+	mrc	p15, 0, r1, c14, c2, 1	/* r1 = CNTP_CTL */
+	mrrc	p15, 2, r2, r3, c14	/* r2,r3 = CNTP_CVAL */
+	push	{r1, r2, r3, lr}
+
 	/* Context switch to nonsecure */
 	ldr	r2, =mon_s_sp
 	ldr	r3, =mon_ns_sp
 	ldr	r3, [r3]
-	b	sm_context_switch
+	bl	sm_context_switch
+
+	pop	{r1, r2, r3, lr}
+	mcrr	p15, 2, r2, r3, c14	/* CNTP_CVAL = r2,r3 (saved CNTP_CVAL) */
+	mcr	p15, 0, r1, c14, c2, 1	/* CNTP_CTL = r1 (saved CNTP_CTL) */
+
+#if WITH_LIB_UTHREAD
+	mrrc	p15, 1, r2, r3, c2	/* r2,r3 = TTBR1 (global page tables) */
+	mcrr	p15, 0, r2, r3, c2	/* TTBR0 = r2,r3 (TTBR1) */
+	pop	{r1, r2, r3, lr}
+	isb
+	mcr	p15, 0, r1, c13, c0, 1	/* CONTEXTIDR = r1 (saved CONTEXTIDR) */
+	isb
+	mcrr	p15, 0, r2, r3, c2	/* TTBR0 = r2,r3 (saved TTBR0) */
+#endif
+
+	bx	lr
 
 /* sm_sched_nonsecure(uint32_t retval) */
 FUNCTION(sm_sched_nonsecure)
