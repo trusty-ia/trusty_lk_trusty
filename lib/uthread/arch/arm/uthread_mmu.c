@@ -31,9 +31,10 @@
 #include <arch/arm.h>
 #include <arch/arm/mmu.h>
 #include <arch/uthread_mmu.h>
+#include <lk/init.h>
 #include <uthread.h>
 
-void arm_uthread_mmu_init()
+static void arm_uthread_mmu_init(uint level)
 {
 	uint32_t cur_ttbr0;
 
@@ -49,6 +50,9 @@ void arm_uthread_mmu_init()
 
 	arm_invalidate_tlb();
 }
+
+LK_INIT_HOOK_FLAGS(libuthreadarmmmu, arm_uthread_mmu_init,
+                   LK_INIT_LEVEL_ARCH_EARLY, LK_INIT_FLAG_ALL_CPUS);
 
 static u_int *arm_uthread_mmu_alloc_pgtbl(pgtbl_lvl_t type)
 {

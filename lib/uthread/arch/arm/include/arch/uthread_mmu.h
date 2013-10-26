@@ -90,7 +90,6 @@ typedef enum {
 	PGTBL_LEVEL_2,
 } pgtbl_lvl_t;
 
-void arm_uthread_mmu_init(void);
 status_t arm_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
 		vaddr_t vaddr, uint l1_flags, uint l2_flags);
 status_t arm_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr);

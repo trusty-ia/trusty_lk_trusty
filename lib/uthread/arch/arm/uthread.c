@@ -36,7 +36,6 @@
 
 void arch_uthread_init()
 {
-	arm_uthread_mmu_init();
 }
 
 void arch_uthread_startup(void)
