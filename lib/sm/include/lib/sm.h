@@ -24,6 +24,7 @@
 #define __SM_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <sys/types.h>
 #include <lib/sm/smcall.h>
 
