@@ -49,7 +49,8 @@ smc32_args_t *sm_sched_nonsecure(long retval);
 /* Handle an interrupt */
 enum handler_return sm_handle_irq(void);
 
-/* Interrupt controller fiq support */
+/* Interrupt controller irq/fiq support */
+long smc_intc_get_next_irq(smc32_args_t *args);
 long smc_intc_request_fiq(smc32_args_t *args);
 status_t sm_intc_fiq_enter(void); /* return 0 to enter ns-fiq handler, return non-0 to return */
 void sm_intc_fiq_exit(void);

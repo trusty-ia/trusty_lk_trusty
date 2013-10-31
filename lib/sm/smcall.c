@@ -91,6 +91,7 @@ smc32_handler_t sm_fastcall_function_table[] = {
 	[SMC_FUNCTION(SMC_FC_GO_NONSECURE)] = smc_go_nonsecure,
 	[SMC_FUNCTION(SMC_FC_REQUEST_FIQ)] = smc_intc_request_fiq,
 	[SMC_FUNCTION(SMC_FC_FIQ_EXIT)] = smc_fiq_exit,
+	[SMC_FUNCTION(SMC_FC_GET_NEXT_IRQ)] = smc_intc_get_next_irq,
 };
 
 uint32_t sm_nr_fastcall_functions = countof(sm_fastcall_function_table);
