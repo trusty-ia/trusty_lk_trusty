@@ -253,10 +253,6 @@ void uthread_context_switch(thread_t *oldthread, thread_t *newthread)
 	uthread_t *old_ut = (uthread_t *)oldthread->tls[TLS_ENTRY_UTHREAD];
 	uthread_t *new_ut = (uthread_t *)newthread->tls[TLS_ENTRY_UTHREAD];
 
-	/* nothing more to do if newthread is a kthread */
-	if (!new_ut)
-		return;
-
 	arch_uthread_context_switch(old_ut, new_ut);
 }
 
