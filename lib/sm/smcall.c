@@ -69,8 +69,19 @@ static long smc_restart_stdcall(smc32_args_t *args)
 	return SM_ERR_UNEXPECTED_RESTART;
 }
 
+/*
+ * Switch to secure mode and return. This function does no work on its own,
+ * but if an interrupt is pending, it will be handled, and can in turn trigger a
+ * context switch that will perform other secure work.
+ */
+static long smc_nop_stdcall(smc32_args_t *args)
+{
+	return 0;
+}
+
 static smc32_handler_t sm_stdcall_function_table[] = {
 	[SMC_FUNCTION(SMC_SC_RESTART_LAST)] = smc_restart_stdcall,
+	[SMC_FUNCTION(SMC_SC_NOP)] = smc_nop_stdcall,
 };
 
 static long smc_stdcall_secure_monitor(smc32_args_t *args)
