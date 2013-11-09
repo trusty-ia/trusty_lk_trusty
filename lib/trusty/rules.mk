@@ -8,6 +8,8 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/syscall.c \
 	$(LOCAL_DIR)/handle.c \
 	$(LOCAL_DIR)/uctx.c \
+	$(LOCAL_DIR)/ipc.c \
+	$(LOCAL_DIR)/ipc_msg.c \
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/include \
