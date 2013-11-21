@@ -338,6 +338,20 @@ status_t copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
 	return NO_ERROR;
 }
 
+status_t strlcpy_from_user(char *kdest, user_addr_t usrc, size_t len)
+{
+	status_t rc;
+
+	/* TODO: properly implement this so that you the user doesn't need
+	 * to have a mapping extending from usrc to usrc + len, only up to
+	 * the actual length of string (i.e. to its '\0').
+	 */
+
+	rc = copy_from_user(kdest, usrc, len);
+	kdest[len - 1] = '\0';
+	return rc;
+}
+
 #ifdef WITH_LIB_OTE
 status_t uthread_virt_to_phys(uthread_t *ut, vaddr_t vaddr, paddr_t *paddr)
 {
