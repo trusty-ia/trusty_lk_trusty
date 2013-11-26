@@ -202,16 +202,19 @@ static void arm_write_v2p(vaddr_t vaddr, v2p_t v2p)
 	}
 }
 
-static uint32_t arm_read_par(void)
+static uint64_t arm_read_par(void)
 {
-	uint32_t val;
+	uint32_t lower, higher;
 
 	__asm__ volatile(
 		"mrc	p15, 0, %0, c7, c4, 0	\n"
-		 :"=r"(val) : :
+		"tst	%0, #(1 << 11)		@ LPAE / long desc format\n"
+		"moveq	%1, #0			\n"
+		"mrrcne	p15, 0, %0, %1, c7	\n"
+		 :"=r"(lower), "=r"(higher) : :
 	);
 
-	return val;
+	return ((uint64_t)higher << 32) | lower;
 }
 
 /* Translate vaddr from current context and map into target uthread */
@@ -220,7 +223,6 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src
 		uint32_t npages, u_int flags, bool ns_src)
 {
 	u_int type, pg;
-	u_int par, first;
 	vaddr_t vs, vt;
 	u_int l1_flags, l2_flags;
 	status_t err = NO_ERROR;
@@ -234,29 +236,43 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src
 	vt = vaddr_target;
 	for (pg = 0; pg < npages; pg++, vs += PAGE_SIZE, vt += PAGE_SIZE) {
 		u_int inner, outer, shareable;
+		u_int first_inner, first_outer, first_shareable;
+		uint64_t par;
+		uint64_t physaddr;
 
 		arm_write_v2p(vs, type);
 		par = arm_read_par();
 		if (par & PAR_ATTR_FAULTED) {
 			dprintf(CRITICAL,
-				"failed %s user read V2P (v = 0x%08x, par = 0x%08x)\n",
+				"failed %s user read V2P (v = 0x%08x, par = 0x%016llx)\n",
 				(flags & UTM_NS_MEM) ? "NS" : "SEC",
 				(u_int)vs, par);
-			halt();
 			err = ERR_NOT_VALID;
 			goto err_out;
 		}
 
-		/* expect PAR 31:12 to be phys page addr */
-		ASSERT(!(par & PAR_ATTR_SSECTION));
+		if (par & PAR_ATTR_LPAE) {
+			inner = PAR_LDESC_ATTR_INNER(par);
+			outer = PAR_LDESC_ATTR_OUTER(par);
+			shareable = PAR_LDESC_ATTR_SHAREABLE(par);
+			physaddr = PAR_LDESC_ALIGNED_PA(par);
+		} else {
+			inner = PAR_SDESC_ATTR_INNER(par);
+			outer = PAR_LDESC_ATTR_OUTER(par);
+			shareable = PAR_SDESC_ATTR_SHAREABLE(par);
+			physaddr = PAR_SDESC_ALIGNED_PA(par);
+		}
 
-		inner = PAR_ATTR_INNER(par);
-		outer = PAR_ATTR_OUTER(par);
-		shareable = PAR_ATTR_SHAREABLE(par);
-
-		/* only cacheable memory attributes */
-		ASSERT((inner != PAR_ATTR_INNER_STRONGLY_ORDERED) &&
-			(inner != PAR_ATTR_INNER_DEVICE));
+#if !WITH_LPAE
+		/* without LPAE enabled, we can't map memory beyond 4GB */
+		if (physaddr >> 32) {
+			dprintf(CRITICAL,
+				"%s: physaddr (0x%016llx) >= 4GB and LPAE is unsupported\n",
+				__func__, physaddr);
+			err = ERR_NOT_SUPPORTED;
+			goto err_out;
+		}
+#endif
 		/*
 		 * Set flags on first page and check for attribute
 		 * consistency on subsequent pages
@@ -271,18 +287,18 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src
 			/* outer cacheable (tex) */
 			l2_flags |= (MMU_MEMORY_SET_L2_CACHEABLE_MEM |
 					MMU_MEMORY_SET_L2_OUTER(outer));
-			first = par;
-		} else if ((first & PAR_ATTR_MASK) != (par & PAR_ATTR_MASK)) {
+
+			first_inner = inner;
+			first_outer = outer;
+			first_shareable = shareable;
+		} else if (inner != first_inner || outer != first_outer ||
+				shareable != first_shareable) {
 			dprintf(CRITICAL,
-				"attribute inconsistency "
-				"(first 0x%08x != current 0x%08x)\n",
-				(first & PAR_ATTR_MASK),
-				(par & PAR_ATTR_MASK));
-			par = 0xFFFFFFFF;
+				"%s: attribute inconsistency!\n", __func__);
 			err = ERR_NOT_VALID;
 			goto err_out;
 		}
-		pfn_list[pg] = PAR_ALIGNED_PA(par);
+		pfn_list[pg] = physaddr;
 
 		err = arm_uthread_mmu_map(ut_target, pfn_list[pg], vt,
 				l1_flags, l2_flags);
