@@ -57,6 +57,7 @@ enum
 	KM_PHYS_CONTIG	= 1 << 4,	/* Physically contiguious */
 	KM_NS_MEM	= 1 << 5,	/* Non-secure memory */
 	KM_IO		= 1 << 6,	/* MMIO registers */
+	KM_UC		= 1 << 7,	/* Bypass CPU cache(s) */
 };
 
 /* Initialize kmap with an available vaddr range */

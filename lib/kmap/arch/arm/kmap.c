@@ -55,6 +55,8 @@ status_t arch_kmap(kmap_t *mp)
 	/* Caching policy */
 	if (mp->flags & KM_IO)
 		flags |= MMU_MEMORY_L1_TYPE_DEVICE_SHARED;
+	else if (mp->flags & KM_UC)
+		flags |= MMU_MEMORY_L1_TYPE_NORMAL;
 	else
 		flags |= MMU_MEMORY_L1_TYPE_NORMAL_WRITE_BACK_NO_ALLOCATE;
 
