@@ -163,7 +163,7 @@ status_t kmap(paddr_t *pfn_list, size_t size, u_int flags,
 
 	err = arch_kmap(mp);
 
-	if (!err)
+	if (err)
 		kmap_remove(mp);
 unlock:
 	mutex_release(&kmap_lock);
