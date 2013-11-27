@@ -206,10 +206,10 @@ FUNCTION(smc_fiq_exit)
 	ldr	ip, =sm_intc_fiq_exit
 	blx	ip
 
-	/* Retrieve FIQ mode spsr, lr and restore r0 from FIQ mode r11 */
+	/* Retrieve FIQ mode spsr, lr and restore r0 from FIQ mode r12 */
 	cps	#MODE_FIQ
 
-	mov	r0, r11 /* restore r0 used for smc number */
+	mov	r0, r12 /* restore r0 used for smc number */
 	mrs	r1, spsr
 	mov	r2, lr
 
