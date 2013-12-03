@@ -23,7 +23,6 @@
 
 #include <asm.h>
 
-#define SYSCALL_UNDEF	0
 #define MODE_SVC	0x13
 
 /* ARM syscall ABI
@@ -44,11 +43,11 @@ FUNCTION (arm_syscall)
 	ldr	r14, =nr_syscalls
 	ldr	r14, [r14]
 	cmp	r12, r14
-	movhs	r0, r12
-	movhs	r12, #SYSCALL_UNDEF
 
-	ldr	r14, =syscall_table
-	ldr	r14, [r14, r12, lsl#2]
+	ldrlo	r14, =syscall_table
+	ldrlo	r14, [r14, r12, lsl#2]
+	rsblos	r12, r14, #1	/* This will set the same flags as the cmp above */
+	ldrhs	r14,=sys_undefined
 	blx	r14
 
 	cpsid	iaf

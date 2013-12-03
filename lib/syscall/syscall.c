@@ -36,7 +36,7 @@
 #include <err.h>
 #include <kernel/thread.h>
 
-static long sys_undefined(int num)
+long sys_undefined(int num)
 {
 	dprintf(SPEW, "%p invalid syscall %d requested\n", current_thread, num);
 	return ERR_NOT_SUPPORTED;
@@ -53,7 +53,6 @@ static long sys_undefined(int num)
 
 #define DEF_SYSCALL(nr, fn, rtype, nr_args, ...) [(nr)] = (unsigned long) (sys_##fn),
 const unsigned long syscall_table [] = {
-	DEF_SYSCALL(0, undefined, long, 0)
 
 #ifdef WITH_SYSCALL_TABLE
 #include <syscall_table.h>
