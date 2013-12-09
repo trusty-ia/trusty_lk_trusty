@@ -391,6 +391,8 @@ static char *align_next_app(Elf32_Ehdr *elf_hdr, Elf32_Shdr *pad_hdr,
 		 * we copy less each time we realign for the next trusty_app.
 		 */
 		memcpy(next_trusty_app_align_start, next_trusty_app_fsize_start, copy_size);
+		arch_sync_cache_range((addr_t)next_trusty_app_align_start,
+				       copy_size);
 		trusty_app_image_end -= (next_trusty_app_fsize_start - next_trusty_app_align_start);
 	}
 
