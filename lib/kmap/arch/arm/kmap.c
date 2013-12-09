@@ -58,7 +58,8 @@ status_t arch_kmap(kmap_t *mp)
 	else if (mp->flags & KM_UC)
 		flags |= MMU_MEMORY_L1_TYPE_NORMAL;
 	else
-		flags |= MMU_MEMORY_L1_TYPE_NORMAL_WRITE_BACK_NO_ALLOCATE;
+		flags |= MMU_MEMORY_L1_TYPE_NORMAL_WRITE_BACK_ALLOCATE |
+			MMU_MEMORY_L1_SECTION_SHAREABLE;
 
 	for (pg = 0; pg < (mp->size / PAGE_SIZE_1M); pg++) {
 		if (mp->flags & KM_PHYS_CONTIG)
