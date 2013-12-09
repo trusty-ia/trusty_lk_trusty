@@ -41,15 +41,19 @@ void arch_uthread_init()
 void arch_uthread_startup(void)
 {
 	struct uthread *ut = (struct uthread *) tls_get(TLS_ENTRY_UTHREAD);
-	vaddr_t sp_usr = ROUNDDOWN(ut->start_stack, 8);
+	register uint32_t sp_usr asm("r2") = ROUNDDOWN(ut->start_stack, 8);
+	register uint32_t entry asm("r3") = ut->entry;
 
 	__asm__ volatile(
-		"stmdb	sp, {%0, %1}		\n"
+		"mov	r0, #0\n"
+		"mov	r1, #0\n"
+		"stmdb	sp, {%[stack], %[entry]}	\n"
 		"ldmdb	sp, {r13, r14}^		\n"
 		"msr	spsr_fxsc, #0x10	\n"
-		"movs	pc, %1			\n"
-		: : "r" (sp_usr),
-		    "r" (ut->entry) : "memory"
+		"movs	pc, %[entry]			\n"
+		:
+		: [stack]"r" (sp_usr), [entry]"r" (entry)
+		: "r0", "r1", "memory"
 	);
 }
 
