@@ -189,9 +189,24 @@ static void arm_write_v2p(vaddr_t vaddr, v2p_t v2p)
 			);
 			break;
 
+		case ATS1CPR:
+			__asm__ volatile(
+				"mcr	p15, 0, %0, c7, c8, 0	\n"
+				: : "r"(vaddr)
+			);
+			break;
+
+
 		case ATS12NSOUR:
 			__asm__ volatile(
 				"mcr	p15, 0, %0, c7, c8, 6	\n"
+				: : "r"(vaddr)
+			);
+			break;
+
+		case ATS12NSOPR:
+			__asm__ volatile(
+				"mcr	p15, 0, %0, c7, c8, 4	\n"
 				: : "r"(vaddr)
 			);
 			break;

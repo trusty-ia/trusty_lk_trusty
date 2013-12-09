@@ -73,6 +73,8 @@
 typedef enum {
 	ATS1CUR,
 	ATS12NSOUR,
+	ATS1CPR,
+	ATS12NSOPR,
 } v2p_t;
 
 #endif /* WITH_LIB_OTE */
