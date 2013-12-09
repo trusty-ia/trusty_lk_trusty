@@ -70,7 +70,7 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 		pgd = kvaddr_to_paddr(new_ut->page_table);
 		arm_write_contextidr(new_ut->arch.asid);
 		ISB;
-		arm_write_ttbr0(pgd);
+		arm_write_ttbr0(pgd | MMU_TTBRx_FLAGS);
 #ifdef ARM_WITH_NEON
 		arm_write_fpexc(new_ut->arch.fpctx->fpexc);
 #endif
