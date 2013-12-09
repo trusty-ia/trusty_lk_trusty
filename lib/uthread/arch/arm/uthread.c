@@ -126,7 +126,7 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
 		l2_flags |= MMU_MEMORY_L2_SHAREABLE;
 
 		/* inner cacheable (cb) */
-		l2_flags |= MMU_MEMORY_SET_L2_INNER(MMU_MEMORY_WRITE_BACK_NO_ALLOCATE);
+		l2_flags |= MMU_MEMORY_SET_L2_INNER(MMU_MEMORY_WRITE_BACK_ALLOCATE);
 
 		/* outer cacheable (tex) */
 		l2_flags |= (MMU_MEMORY_SET_L2_CACHEABLE_MEM |
