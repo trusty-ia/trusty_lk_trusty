@@ -111,7 +111,7 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
 
 	ASSERT(!(mp->size & PAGE_MASK));
 
-	l1_flags = (mp->flags & UTM_NS_MEM) ? MMU_MEMORY_L1_NON_SECURE : 0;
+	l1_flags = (mp->flags & UTM_NS_MEM) ? MMU_MEMORY_L1_PAGETABLE_NON_SECURE : 0;
 
 	l2_flags = (mp->flags & UTM_W) ? MMU_MEMORY_L2_AP_P_RW_U_RW :
 					  MMU_MEMORY_L2_AP_P_RW_U_RO;
@@ -228,7 +228,7 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src
 	status_t err = NO_ERROR;
 
 	type = ns_src ? ATS12NSOUR : ATS1CUR;
-	l1_flags = (flags & UTM_NS_MEM) ? MMU_MEMORY_L1_NON_SECURE : 0;
+	l1_flags = (flags & UTM_NS_MEM) ? MMU_MEMORY_L1_PAGETABLE_NON_SECURE : 0;
 	l2_flags = (flags & UTM_W) ? MMU_MEMORY_L2_AP_P_RW_U_RW :
 				     MMU_MEMORY_L2_AP_P_RW_U_RO;
 
