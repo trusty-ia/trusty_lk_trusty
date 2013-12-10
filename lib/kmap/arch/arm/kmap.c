@@ -43,7 +43,7 @@ status_t arch_kmap(kmap_t *mp)
 	u_int flags, pg;
 
 	/* Security */
-	flags = (mp->flags & KM_NS_MEM) ? MMU_MEMORY_L1_NON_SECURE : 0;
+	flags = (mp->flags & KM_NS_MEM) ? MMU_MEMORY_L1_SECTION_NON_SECURE : 0;
 
 	/* Permissions */
 	if (mp->flags & KM_NONE)
