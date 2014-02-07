@@ -102,3 +102,12 @@ long sys_ioctl(uint32_t fd, uint32_t req, void *buf)
 	return ERR_NOT_SUPPORTED;
 }
 #endif /* WITH_LIB_OTE */
+
+#define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
+
+long sys_nanosleep(uint32_t clock_id, uint32_t flags, uint64_t sleep_time)
+{
+	thread_sleep(MSECS_TO_LK_TIME(DIV_ROUND_UP(sleep_time, 1000 * 1000)));
+
+	return NO_ERROR;
+}
