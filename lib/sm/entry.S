@@ -26,6 +26,15 @@
 #include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
 
+#if !WITH_LIB_SM_MONITOR
+
+#define TOS_COMPLETION		1
+#define TOS_INITIAL_NS_RETURN	3
+
+#endif
+
+#if WITH_LIB_SM_MONITOR
+
 .macro SAVE_CONTEXT
 	push	{r4-r11, lr}
 	mov	r4, sp
@@ -222,13 +231,16 @@ FUNCTION(smc_fiq_exit)
 
 	ldmfd	sp!, {r1-r3, ip}
 	movs	pc, lr
+#endif
 
 FUNCTION(platform_reset)
+#if WITH_LIB_SM_MONITOR
 	cps	#MODE_MON
-
+#endif
 	adr	sp, platform_reset	/* sp = paddr */
 	ldr	ip, =platform_reset	/* ip = vaddr */
 	sub	ip, sp, ip		/* ip = phys_offset */
+#if WITH_LIB_SM_MONITOR
 	ldr	sp, =mon_ns_stack_top	/* sp = ns_stack vaddr */
 	add	sp, sp, ip		/* sp = ns_stack paddr */
 
@@ -265,6 +277,8 @@ FUNCTION(platform_reset)
 
 	SWITCH_SCR_TO_SECURE r9
 
+#endif
+
 	/* r0 is memsize passed in by the bootloader */
 	ldr	r4, =_start	/* r4 = _start vaddr */
 	add	r4, r4, r0	/* r4 = _start + size */
@@ -283,6 +297,8 @@ FUNCTION(platform_reset)
 
 	cps	#MODE_SVC
 	b	arm_reset
+
+#if WITH_LIB_SM_MONITOR
 
 /* Context switch preserving r0-r1 */
 FUNCTION(sm_context_switch)
@@ -386,6 +402,27 @@ FUNCTION(sm_set_mon_stack)
 	cps	MODE_SVC
 	bx	lr
 
+#else
+
+/* sm_sched_nonsecure_raw(uint32_t retval) */
+FUNCTION(sm_sched_nonsecure_raw)
+	push	{r0}
+	ldr	r0, =TOS_COMPLETION
+	smc	#0
+	pop	{ip}
+	stmia	ip, {r0-r3}
+	bx	lr
+
+FUNCTION(sm_sched_nonsecure_raw_first)
+	push	{r0}
+	ldr	r0, =TOS_INITIAL_NS_RETURN
+	smc	#0
+	pop	{ip}
+	stmia	ip, {r0-r3}
+	bx	lr
+
+#endif
+
 FUNCTION(smc_fastcall_secure_monitor)
 	ldrh	r1, [r0]	/* r1 = function# */
 	ldr	r2, =sm_nr_fastcall_functions
@@ -398,6 +435,9 @@ FUNCTION(smc_fastcall_secure_monitor)
 	bx	r2
 .data
 .align 3
+
+#if WITH_LIB_SM_MONITOR
+
 LOCAL_DATA(mon_ns_stack)
 	.skip	4096
 DATA(mon_ns_stack_top)
@@ -405,6 +445,9 @@ LOCAL_DATA(mon_ns_sp)
 	.long	0
 LOCAL_DATA(mon_s_sp)
 	.long 0
+
+#endif
+
 DATA(sm_platform_boot_args)
 	.long 0		/* Address of arg block */
 	.long 0		/* Size of arg block */

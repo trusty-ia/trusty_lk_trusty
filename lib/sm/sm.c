@@ -66,6 +66,7 @@ static void sm_wait_for_smcall(void)
 	}
 }
 
+#if WITH_LIB_SM_MONITOR
 /* per-cpu secure monitor initialization */
 static void sm_secondary_init(uint level)
 {
@@ -94,6 +95,7 @@ static void sm_secondary_init(uint level)
 }
 
 LK_INIT_HOOK_FLAGS(libsm_cpu, sm_secondary_init, LK_INIT_LEVEL_PLATFORM - 2, LK_INIT_FLAG_ALL_CPUS);
+#endif
 
 static void sm_init(uint level)
 {
