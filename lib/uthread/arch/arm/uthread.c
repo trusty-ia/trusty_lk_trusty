@@ -74,6 +74,7 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 #ifdef ARM_WITH_NEON
 		arm_write_fpexc(new_ut->arch.fpctx->fpexc);
 #endif
+		ISB;
 	}
 }
 
