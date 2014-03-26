@@ -33,8 +33,6 @@
 
 #endif
 
-#if WITH_LIB_SM_MONITOR
-
 .macro SAVE_CONTEXT
 	push	{r4-r11, lr}
 	mov	r4, sp
@@ -58,7 +56,11 @@
 	cps	#MODE_SYS
 	stmfd	r4!, {sp, lr}
 
+#if WITH_LIB_SM_MONITOR
 	cps	#MODE_MON
+#else
+	cps	#MODE_SVC
+#endif
 	mov	sp, r4
 .endm
 
@@ -84,10 +86,16 @@
 	ldmfd	r4!, {r5, sp, lr}
 	msr	spsr, r5
 
+#if WITH_LIB_SM_MONITOR
 	cps	#MODE_MON
+#else
+	cps	#MODE_SVC
+#endif
 	mov	sp, r4
 	pop	{r4-r11, lr}
 .endm
+
+#if WITH_LIB_SM_MONITOR
 
 .p2align 5
 .globl monitor_vector_table
@@ -101,13 +109,16 @@ monitor_vector_table:
 	b	.			/* IRQ		*/
 	b	mon_fiq_entry		/* FIQ		*/
 
+#endif
 /* Secure monitor call
  * r0    = SMC call number
  * r1-r3 = args
  * r0    = return value
  */
 FUNCTION(arm_smcall)
+#if WITH_LIB_SM_MONITOR
 	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
+#endif
 
 	tst	r0, #(1 << 30)		/* Check calling convention */
 	movne	r0, #SM_ERR_NOT_SUPPORTED
@@ -125,17 +136,38 @@ FUNCTION(arm_smcall)
 	blx	r14
 	add	sp, #(4 * SMC_NUM_ARGS)
 1:
+#if WITH_LIB_SM_MONITOR
 	rfefd	sp!
+#else
+	mov	r1, r0
+	ldr	r0, =TOS_COMPLETION
+	smc	#0
+	b	arm_smcall
+#endif
 
-FUNCTION(sm_boot_ns)
-	SWITCH_SCR_TO_NONSECURE ip
+FUNCTION(sm_boot_ns_locked)
 #if WITH_SMP
 	push	{r0-r3}
 	ldr	r0, =secondary_boot_lock
 	blx	spin_unlock
 	pop	{r0-r3}
 #endif
+	/* fall through */
+FUNCTION(sm_boot_ns)
+#if WITH_LIB_SM_MONITOR
+	SWITCH_SCR_TO_NONSECURE ip
+#endif
+#if WITH_LIB_SM_MONITOR
 	rfefd	sp!
+#else
+	cpsid	f
+	mov	r1, r0
+	ldr	r0, =TOS_INITIAL_NS_RETURN
+	smc	#0
+	b	arm_smcall
+#endif
+
+#if WITH_LIB_SM_MONITOR
 
 mon_fiq_from_secure:
 	pop	{r0-r3}
@@ -238,16 +270,17 @@ FUNCTION(platform_reset)
 	adr	sp, platform_reset	/* sp = paddr */
 	ldr	ip, =platform_reset	/* ip = vaddr */
 	sub	ip, sp, ip		/* ip = phys_offset */
-#if WITH_LIB_SM_MONITOR
 	ldr	sp, =mon_ns_stack_top	/* sp = ns_stack vaddr */
 	add	sp, sp, ip		/* sp = ns_stack paddr */
 
+#if WITH_LIB_SM_MONITOR
 	cps	#MODE_SVC
 	msr	spsr_cfsx, #MODE_SVC_IRQ_DISABLED
 	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
 	cps	#MODE_MON
+#endif
 
-	ldr	lr, =sm_boot_ns
+	ldr	lr, =sm_boot_ns_locked
 	SAVE_CONTEXT
 
 	ldr	lr, =mon_ns_sp	/* lr = mon_ns_sp vaddr */
@@ -258,6 +291,7 @@ FUNCTION(platform_reset)
 	/* Switch to S thread in monitor, stack will be allocated later */
 	ldr	sp, =0
 
+#if WITH_LIB_SM_MONITOR
 	/* Initialize NS mode CPU context registers */
 	mrc	p15, 0, r4, c12, c0, 0	/* r4 = VBAR */
 	mrc	p15, 0, r5, c2, c0, 0	/* r5 = TTBR0 */
@@ -296,8 +330,6 @@ FUNCTION(platform_reset)
 	cps	#MODE_SVC
 	b	arm_reset
 
-#if WITH_LIB_SM_MONITOR
-
 /* Context switch preserving r0-r1 */
 FUNCTION(sm_context_switch)
 	SAVE_CONTEXT
@@ -318,7 +350,9 @@ FUNCTION(sm_sched_secure)
 	movne	r0, #SM_ERR_BUSY
 	bne	sm_sched_secure_busy
 #endif
+#if WITH_LIB_SM_MONITOR
 	SWITCH_SCR_TO_SECURE r1
+#endif
 	/* Context switch to secure */
 	ldr	r2, =mon_ns_sp
 	ldr	r3, =mon_s_sp
@@ -326,7 +360,9 @@ FUNCTION(sm_sched_secure)
 	push	{ip, lr}
 	bl	sm_context_switch
 	pop	{ip, lr}
+#if WITH_LIB_SM_MONITOR
 	SWITCH_SCR_TO_NONSECURE ip
+#endif
 
 #if WITH_SMP
 	push	{r0, lr}
@@ -343,6 +379,8 @@ sm_sched_secure_busy:
 	mov	ip, #0
 	bx	lr
 
+#if WITH_LIB_SM_MONITOR
+
 FUNCTION(smc_go_nonsecure)
 
 	/* If NS called this, go back */
@@ -355,6 +393,12 @@ FUNCTION(smc_go_nonsecure)
 	ldr	r0, [r0, #4]
 
 go_nonsecure:
+
+#else /* !WITH_LIB_SM_MONITOR */
+
+FUNCTION(sm_sched_nonsecure)
+	cpsid	f	/* don't allow fiqs while handling fastcalls */
+#endif
 	/* Save secure only state, in case we return on a different cpu */
 #if WITH_LIB_UTHREAD
 	mrc	p15, 0, r1, c13, c0, 1	/* r1 = CONTEXTIDR */
@@ -385,7 +429,13 @@ go_nonsecure:
 	mcrr	p15, 0, r2, r3, c2	/* TTBR0 = r2,r3 (saved TTBR0) */
 #endif
 
+#if !WITH_LIB_SM_MONITOR
+	cpsie	f
+#endif
+
 	bx	lr
+
+#if WITH_LIB_SM_MONITOR
 
 /* sm_sched_nonsecure(uint32_t retval) */
 FUNCTION(sm_sched_nonsecure)
@@ -398,25 +448,6 @@ FUNCTION(sm_set_mon_stack)
 	cps	#MODE_MON
 	mov	sp, r0
 	cps	MODE_SVC
-	bx	lr
-
-#else
-
-/* sm_sched_nonsecure_raw(uint32_t retval) */
-FUNCTION(sm_sched_nonsecure_raw)
-	push	{r0}
-	ldr	r0, =TOS_COMPLETION
-	smc	#0
-	pop	{ip}
-	stmia	ip, {r0-r3}
-	bx	lr
-
-FUNCTION(sm_sched_nonsecure_raw_first)
-	push	{r0}
-	ldr	r0, =TOS_INITIAL_NS_RETURN
-	smc	#0
-	pop	{ip}
-	stmia	ip, {r0-r3}
 	bx	lr
 
 #endif
@@ -434,8 +465,6 @@ FUNCTION(smc_fastcall_secure_monitor)
 .data
 .align 3
 
-#if WITH_LIB_SM_MONITOR
-
 LOCAL_DATA(mon_ns_stack)
 	.skip	4096
 DATA(mon_ns_stack_top)
@@ -443,8 +472,6 @@ LOCAL_DATA(mon_ns_sp)
 	.long	0
 LOCAL_DATA(mon_s_sp)
 	.long 0
-
-#endif
 
 DATA(sm_platform_boot_args)
 	.long 0		/* Address of arg block */

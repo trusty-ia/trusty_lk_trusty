@@ -66,7 +66,16 @@ static void sm_wait_for_smcall(void)
 	}
 }
 
-#if WITH_LIB_SM_MONITOR
+#if !WITH_LIB_SM_MONITOR
+void sm_set_mon_stack(void *stack)
+{
+#if WITH_SMP
+	extern void *secondary_cpu_allocated_stack;
+	secondary_cpu_allocated_stack = stack;
+#endif
+}
+#endif
+
 /* per-cpu secure monitor initialization */
 static void sm_secondary_init(uint level)
 {
@@ -79,6 +88,7 @@ static void sm_secondary_init(uint level)
 	else
 		sm_set_mon_stack(mon_stack + stack_size);
 
+#if WITH_LIB_SM_MONITOR
 	/* let normal world enable SMP, lock TLB, access CP10/11 */
 	__asm__ volatile (
 		"mrc	p15, 0, r1, c1, c1, 2	\n"
@@ -92,10 +102,10 @@ static void sm_secondary_init(uint level)
 		"mcr	p15, 0, %0, c12, c0, 1	\n"
 		: : "r" (&monitor_vector_table)
 	);
+#endif
 }
 
 LK_INIT_HOOK_FLAGS(libsm_cpu, sm_secondary_init, LK_INIT_LEVEL_PLATFORM - 2, LK_INIT_FLAG_ALL_CPUS);
-#endif
 
 static void sm_init(uint level)
 {

@@ -158,29 +158,3 @@ unlock:
 	mutex_release(&smc_table_lock);
 	return err;
 }
-
-#if !WITH_LIB_SM_MONITOR
-static smc32_args_t sm_args_copy;
-void sm_sched_nonsecure_raw(smc32_args_t *regs, long retval);
-void sm_sched_nonsecure_raw_first(smc32_args_t *regs, long retval);
-
-smc32_args_t *sm_sched_nonsecure(long retval)
-{
-	static bool first_call = true;
-	smc32_args_t sm_args;
-
-	do {
-		if (first_call) {
-			sm_sched_nonsecure_raw_first(&sm_args, retval);
-			first_call = false;
-		} else {
-			sm_sched_nonsecure_raw(&sm_args, retval);
-		}
-		if (SMC_IS_FASTCALL(sm_args.smc_nr)) {
-			retval = sm_fastcall_table[SMC_ENTITY(sm_args.smc_nr)](&sm_args);
-		}
-	} while (SMC_IS_FASTCALL(sm_args.smc_nr));
-	sm_args_copy = sm_args;
-	return &sm_args_copy;
-}
-#endif
