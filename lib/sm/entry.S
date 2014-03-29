@@ -56,8 +56,7 @@
 	stmfd	r4!, {r5, sp, lr}
 
 	cps	#MODE_SYS
-	mrs	r5, spsr
-	stmfd	r4!, {r5, sp, lr}
+	stmfd	r4!, {sp, lr}
 
 	cps	#MODE_MON
 	mov	sp, r4
@@ -67,8 +66,7 @@
 	mov	r4, sp
 
 	cps	#MODE_SYS
-	ldmfd	r4!, {r5, sp, lr}
-	msr	spsr, r5
+	ldmfd	r4!, {sp, lr}
 
 	cps	#MODE_UND
 	ldmfd	r4!, {r5, sp, lr}
