@@ -260,8 +260,11 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src
 		uint64_t par;
 		uint64_t physaddr;
 
+		enter_critical_section();
 		arm_write_v2p(vs, type);
 		par = arm_read_par();
+		exit_critical_section();
+
 		if (par & PAR_ATTR_FAULTED) {
 			dprintf(CRITICAL,
 				"failed %s user read V2P (v = 0x%08x, par = 0x%016llx)\n",
