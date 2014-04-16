@@ -98,15 +98,29 @@ static long smc_stdcall_secure_monitor(smc32_args_t *args)
 	return handler_fn(args);
 }
 
+#if !WITH_LIB_SM_MONITOR
+long smc_fiq_exit(smc32_args_t *args)
+{
+	sm_intc_fiq_exit();
+	return 1; /* 0: reeenter fiq handler, 1: return */
+}
+
+static long smc_fiq_enter(smc32_args_t *args)
+{
+	return sm_intc_fiq_enter();
+}
+#endif
+
 smc32_handler_t sm_fastcall_function_table[] = {
 #if WITH_LIB_SM_MONITOR
 	[SMC_FUNCTION(SMC_FC_GO_NONSECURE)] = smc_go_nonsecure,
 #endif
 	[SMC_FUNCTION(SMC_FC_REQUEST_FIQ)] = smc_intc_request_fiq,
-#if WITH_LIB_SM_MONITOR
 	[SMC_FUNCTION(SMC_FC_FIQ_EXIT)] = smc_fiq_exit,
-#endif
 	[SMC_FUNCTION(SMC_FC_GET_NEXT_IRQ)] = smc_intc_get_next_irq,
+#if !WITH_LIB_SM_MONITOR
+	[SMC_FUNCTION(SMC_FC_FIQ_ENTER)] = smc_fiq_enter,
+#endif
 };
 
 uint32_t sm_nr_fastcall_functions = countof(sm_fastcall_function_table);
