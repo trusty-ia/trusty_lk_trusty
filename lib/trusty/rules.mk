@@ -17,6 +17,4 @@ MODULE_DEPS += \
 GLOBAL_DEFINES += \
 	WITH_SYSCALL_TABLE=1 \
 
-include $(LOCAL_DIR)/arch/$(ARCH)/rules.mk
-
 include make/module.mk
