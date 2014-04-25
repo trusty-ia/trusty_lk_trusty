@@ -397,7 +397,7 @@ go_nonsecure:
 #else /* !WITH_LIB_SM_MONITOR */
 
 FUNCTION(sm_sched_nonsecure)
-	cpsid	f	/* don't allow fiqs while handling fastcalls */
+
 #endif
 	/* Save secure only state, in case we return on a different cpu */
 #if WITH_LIB_UTHREAD
@@ -427,10 +427,6 @@ FUNCTION(sm_sched_nonsecure)
 	mcr	p15, 0, r1, c13, c0, 1	/* CONTEXTIDR = r1 (saved CONTEXTIDR) */
 	isb
 	mcrr	p15, 0, r2, r3, c2	/* TTBR0 = r2,r3 (saved TTBR0) */
-#endif
-
-#if !WITH_LIB_SM_MONITOR
-	cpsie	f
 #endif
 
 	bx	lr
