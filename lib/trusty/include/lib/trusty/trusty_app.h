@@ -29,7 +29,10 @@
 #include <list.h>
 #include <sys/types.h>
 #include <uthread.h>
+
+#if WITH_TRUSTY_IPC
 #include <lib/trusty/uctx.h>
+#endif
 
 #ifdef WITH_LIB_OTE
 #include <lib/ote.h>
@@ -75,7 +78,10 @@ typedef struct trusty_app
 	Elf32_Ehdr *elf_hdr;
 
 	uthread_t *ut;
+
+#if WITH_TRUSTY_IPC
 	uctx_t *uctx;
+#endif
 } trusty_app_t;
 
 void trusty_app_init(void);

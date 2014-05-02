@@ -22,6 +22,5 @@ MODULE_DEPS += \
 
 GLOBAL_DEFINES += \
 	WITH_SYSCALL_TABLE=1 \
-	WITH_TRUSTY_IPC=1 \
 
 include make/module.mk

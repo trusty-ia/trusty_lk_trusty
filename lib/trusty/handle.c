@@ -34,6 +34,8 @@
 #include <kernel/event.h>
 #include <kernel/wait.h>
 
+#if WITH_TRUSTY_IPC
+
 #include <lib/syscall.h>
 #include <lib/trusty/ipc.h>
 
@@ -351,3 +353,6 @@ cleanup:
 	event_destroy(&ev);
 	return ret;
 }
+
+#endif /* WITH_TRUSTY_IPC */
+

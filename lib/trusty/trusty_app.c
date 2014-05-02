@@ -40,11 +40,6 @@
 #include <uthread.h>
 
 #include <lib/trusty/trusty_app.h>
-#include <lib/trusty/uctx.h>
-
-#ifdef WITH_LIB_OTE
-#include <lib/ote.h>
-#endif
 
 /*
  * Layout of .trusty_app.manifest section in the trusted application is the
@@ -551,9 +546,11 @@ void trusty_app_init()
 		}
 		trusty_app->ut = uthread;
 
+#if WITH_TRUSTY_IPC
 		ret = uctx_create(trusty_app, &trusty_app->uctx);
 		if (ret != NO_ERROR)
 			panic("failed allocating thread ipc context (%d)\n", ret);
+#endif
 
 		ret = alloc_address_map(trusty_app);
 		if (ret != NO_ERROR) {

@@ -38,6 +38,9 @@
 #include <kernel/wait.h>
 
 #include <lib/syscall.h>
+
+#if WITH_TRUSTY_IPC
+
 #include <lib/trusty/handle.h>
 #include <lib/trusty/trusty_app.h>
 #include <lib/trusty/uctx.h>
@@ -359,3 +362,33 @@ long __SYSCALL sys_set_cookie(uint32_t handle_id, user_addr_t cookie)
 	handle_decref(handle);
 	return NO_ERROR;
 }
+
+#else  /* WITH_TRUSTY_IPC */
+
+long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
+                        unsigned long timeout_msecs)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+
+long __SYSCALL sys_close(uint32_t handle_id)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+long __SYSCALL sys_set_cookie(uint32_t handle_id, user_addr_t cookie)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+#endif /* WITH_TRUSTY_IPC */
+
+
+
+

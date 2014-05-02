@@ -48,6 +48,9 @@
 #include <uthread.h>
 
 #include <lib/syscall.h>
+
+#if WITH_TRUSTY_IPC
+
 #include <lib/trusty/handle.h>
 #include <lib/trusty/ipc.h>
 #include <lib/trusty/ipc_msg.h>
@@ -572,4 +575,31 @@ int ipc_read_msg(handle_t *chandle, uint32_t msg_id, uint32_t offset,
 	mutex_release(&ipc_lock);
 	return ret;
 }
+
+#else /* WITH_TRUSTY_IPC */
+
+long __SYSCALL sys_send_msg(uint32_t handle_id, user_addr_t user_msg)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+long __SYSCALL sys_get_msg(uint32_t handle_id, user_addr_t user_msg_info)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+long __SYSCALL sys_put_msg(uint32_t handle_id, uint32_t msg_id)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+long __SYSCALL sys_read_msg(uint32_t handle_id, uint32_t msg_id, uint32_t offset,
+                            user_addr_t user_msg)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+#endif  /* WITH_TRUSTY_IPC */
+
+
 

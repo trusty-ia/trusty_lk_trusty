@@ -34,6 +34,9 @@
 #include <kernel/mutex.h>
 
 #include <lib/syscall.h>
+
+#if WITH_TRUSTY_IPC
+
 #include <lib/trusty/ipc.h>
 #include <lib/trusty/trusty_app.h>
 #include <lib/trusty/uctx.h>
@@ -738,4 +741,24 @@ err_accept:
 	handle_decref(phandle);
 	return (long) ret;
 }
+
+#else /* WITH_TRUSTY_IPC */
+
+long __SYSCALL sys_port_create(user_addr_t path, uint num_recv_bufs,
+                               size_t recv_buf_size, uint32_t flags)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+long __SYSCALL sys_accept(uint32_t handle_id)
+{
+	return (long) ERR_NOT_SUPPORTED;
+}
+
+#endif /* WITH_TRUSTY_IPC */
 
