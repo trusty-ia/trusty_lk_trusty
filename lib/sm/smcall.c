@@ -35,10 +35,12 @@
 #include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
 #include <lk/init.h>
+#include <arch/ops.h>
 
 #define LOCAL_TRACE	1
 
 static mutex_t smc_table_lock = MUTEX_INITIAL_VALUE(smc_table_lock);
+static spin_lock_t suspend_resume_lock;
 
 /* Defined elsewhere */
 long smc_go_nonsecure(smc32_args_t *args);
@@ -109,6 +111,26 @@ static long smc_fiq_enter(smc32_args_t *args)
 {
 	return sm_intc_fiq_enter();
 }
+
+static long smc_cpu_suspend(smc32_args_t *args)
+{
+	spin_lock(&suspend_resume_lock);
+	lk_cpu_suspend_reset_init_level();
+	lk_cpu_suspend_init_level(LK_INIT_LEVEL_LAST);
+	spin_unlock(&suspend_resume_lock);
+
+	return 0;
+}
+
+static long smc_cpu_resume(smc32_args_t *args)
+{
+	spin_lock(&suspend_resume_lock);
+	lk_cpu_resume_reset_init_level();
+	lk_cpu_resume_init_level(LK_INIT_LEVEL_LAST);
+	spin_unlock(&suspend_resume_lock);
+
+	return 0;
+}
 #endif
 
 smc32_handler_t sm_fastcall_function_table[] = {
@@ -120,6 +142,8 @@ smc32_handler_t sm_fastcall_function_table[] = {
 	[SMC_FUNCTION(SMC_FC_GET_NEXT_IRQ)] = smc_intc_get_next_irq,
 #if !WITH_LIB_SM_MONITOR
 	[SMC_FUNCTION(SMC_FC_FIQ_ENTER)] = smc_fiq_enter,
+	[SMC_FUNCTION(SMC_FC_CPU_SUSPEND)] = smc_cpu_suspend,
+	[SMC_FUNCTION(SMC_FC_CPU_RESUME)] = smc_cpu_resume,
 #endif
 };
 
