@@ -21,8 +21,9 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#define LOCAL_TRACE 1
+#define LOCAL_TRACE 0
 
+#include <debug.h>
 #include <err.h>
 #include <list.h> // for containerof
 #include <stdlib.h>
@@ -39,6 +40,8 @@
 int handle_alloc(struct handle_ops *ops, void *priv, handle_t **handle_ptr)
 {
 	handle_t *handle;
+
+	DEBUG_ASSERT(handle_ptr);
 
 	handle = malloc(sizeof(handle_t));
 	if (!handle)
@@ -58,31 +61,37 @@ int handle_alloc(struct handle_ops *ops, void *priv, handle_t **handle_ptr)
 
 static inline void __handle_free(handle_t *handle)
 {
+	DEBUG_ASSERT(handle);
 	free(handle);
 }
 
 static void __handle_destroy_ref(refcount_t *ref)
 {
+	DEBUG_ASSERT(ref);
+
 	handle_t *handle = containerof(ref, handle_t, refcnt);
 
-	if (handle && handle->ops && handle->ops->destroy)
+	if (handle->ops && handle->ops->destroy)
 		handle->ops->destroy(handle);
 	__handle_free(handle);
 }
 
 void handle_incref(handle_t *handle)
 {
+	DEBUG_ASSERT(handle);
 	refcount_inc(&handle->refcnt);
 }
 
 void handle_decref(handle_t *handle)
 {
+	DEBUG_ASSERT(handle);
 	refcount_dec(&handle->refcnt, __handle_destroy_ref);
 }
 
 void handle_close(handle_t *handle)
 {
-	if (handle && handle->ops && handle->ops->shutdown)
+	DEBUG_ASSERT(handle);
+	if (handle->ops && handle->ops->shutdown)
 		handle->ops->shutdown(handle);
 	handle_decref(handle);
 }
@@ -130,6 +139,9 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 	event_t ev;
 	int ret = 0;
 
+	if (!handle || !handle_event)
+		return ERR_INVALID_ARGS;
+
 	event_init(&ev, false, EVENT_FLAG_AUTOUNSIGNAL);
 
 	ret = _prepare_wait_handle(&ev, handle);
@@ -171,6 +183,8 @@ err_prepare_wait:
 
 void handle_notify(handle_t *handle)
 {
+	DEBUG_ASSERT(handle);
+
 	/* TODO: need to keep track of the number of events posted? */
 
 	enter_critical_section();
@@ -184,12 +198,16 @@ void handle_notify(handle_t *handle)
 
 void handle_list_init(handle_list_t *hlist)
 {
+	DEBUG_ASSERT(hlist);
+
 	*hlist = (handle_list_t)HANDLE_LIST_INITIAL_VALUE(*hlist);
 }
 
 void handle_list_add(handle_list_t *hlist, handle_t *handle)
 {
-	assert(!list_in_list(&handle->hlist_node));
+	DEBUG_ASSERT(hlist);
+	DEBUG_ASSERT(handle);
+	DEBUG_ASSERT(!list_in_list(&handle->hlist_node));
 
 	handle_incref(handle);
 	mutex_acquire(&hlist->lock);
@@ -199,7 +217,9 @@ void handle_list_add(handle_list_t *hlist, handle_t *handle)
 
 static void _handle_list_del_locked(handle_list_t *hlist, handle_t *handle)
 {
-	assert(list_in_list(&handle->hlist_node));
+	DEBUG_ASSERT(hlist);
+	DEBUG_ASSERT(handle);
+	DEBUG_ASSERT(list_in_list(&handle->hlist_node));
 
 	list_delete(&handle->hlist_node);
 	handle_decref(handle);
@@ -207,6 +227,9 @@ static void _handle_list_del_locked(handle_list_t *hlist, handle_t *handle)
 
 void handle_list_del(handle_list_t *hlist, handle_t *handle)
 {
+	DEBUG_ASSERT(hlist);
+	DEBUG_ASSERT(handle);
+
 	mutex_acquire(&hlist->lock);
 	_handle_list_del_locked(hlist, handle);
 	mutex_release(&hlist->lock);
@@ -214,6 +237,8 @@ void handle_list_del(handle_list_t *hlist, handle_t *handle)
 
 void handle_list_delete_all(handle_list_t *hlist)
 {
+	DEBUG_ASSERT(hlist);
+
 	mutex_acquire(&hlist->lock);
 	while (!list_is_empty(&hlist->handles)) {
 		handle_t *handle;
@@ -229,7 +254,7 @@ void handle_list_delete_all(handle_list_t *hlist)
  * is not dropped until the caller has had a chance to process the handle.
  */
 int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
-		     uint32_t *event_ptr, lk_time_t timeout)
+                     uint32_t *event_ptr, lk_time_t timeout)
 {
 	handle_t *handle;
 	handle_t *tmp;
@@ -238,6 +263,10 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 	event_t ev;
 	int num_ready = 0;
 	uint32_t handle_event;
+
+	DEBUG_ASSERT(hlist);
+	DEBUG_ASSERT(handle_ptr);
+	DEBUG_ASSERT(event_ptr);
 
 	event_init(&ev, false, EVENT_FLAG_AUTOUNSIGNAL);
 
@@ -249,7 +278,7 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 		/* this should NEVER happen! the handle can't already
 		 * be on a poll list
 		 */
-		assert(!list_in_list(&handle->waiter_node));
+		DEBUG_ASSERT(!list_in_list(&handle->waiter_node));
 
 		if (timeout) {
 			ret = _prepare_wait_handle(&ev, handle);
@@ -313,9 +342,11 @@ err_prepare_wait:
 cleanup:
 	list_for_every_entry_safe(&wait_handles, handle, tmp, handle_t,
 				  waiter_node) {
-		list_delete(&handle->waiter_node);
-		_finish_wait_handle(&ev, handle);
-		handle_decref(handle);
+		if (timeout) {
+			list_delete(&handle->waiter_node);
+			_finish_wait_handle(&ev, handle);
+			handle_decref(handle);
+		}
 	}
 	event_destroy(&ev);
 	return ret;
