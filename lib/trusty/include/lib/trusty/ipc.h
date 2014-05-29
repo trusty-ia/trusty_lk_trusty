@@ -55,7 +55,7 @@ typedef struct ipc_port {
 	uint32_t		state;
 	uint32_t		flags;
 
-	int			num_recv_bufs;
+	uint			num_recv_bufs;
 	size_t			recv_buf_size;
 
 	handle_t		*handle;
@@ -67,8 +67,6 @@ typedef struct ipc_port {
 	struct list_node	pending_list;
 
 	struct list_node	node;
-
-	refcount_t		refcount;
 } ipc_port_t;
 
 enum {
@@ -100,20 +98,12 @@ typedef struct ipc_chan {
 	ipc_msg_queue_t		*msg_queue;
 } ipc_chan_t;
 
-/* server allocates a new port at the given path */
-int ipc_port_create(const char *path, int num_recv_bufs,
-		    size_t recv_buf_size, uint32_t flags,
-		    handle_t **phandle_ptr);
-
 /* server calls to accept a pending connection */
 int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr);
 
 /* client requests a connection to a port */
 int ipc_port_connect(const char *path, lk_time_t timeout,
 		     handle_t **chandle_ptr);
-
-void port_incref(ipc_port_t *port);
-void port_decref(ipc_port_t *port);
 
 bool ipc_is_channel(handle_t *handle);
 bool ipc_is_port(handle_t *handle);
