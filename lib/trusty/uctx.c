@@ -21,7 +21,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#define LOCAL_TRACE 1
+#define LOCAL_TRACE 0
 
 #include <bits.h>
 #include <err.h>
@@ -46,8 +46,6 @@
 #define IPC_MAX_HANDLES		64
 
 struct uctx {
-	/* protects the inuse and handles fields */
-	mutex_t			lock;
 	unsigned long		inuse[BITMAP_NUM_WORDS(IPC_MAX_HANDLES)];
 	handle_t		*handles[IPC_MAX_HANDLES];
 
@@ -55,17 +53,76 @@ struct uctx {
 	handle_list_t		handle_list;
 };
 
+
+/*
+ *  Get uctx context of the current app
+ */
+static uctx_t *_get_uctx(void)
+{
+	uthread_t *ut = uthread_get_current();
+	trusty_app_t *tapp = ut->private_data;
+	return tapp->uctx;
+}
+
+/*
+ *  Check if specified handle_id does represent a valid handle
+ *  for specified user context.
+ */
+static int _check_handle_id(uctx_t *ctx, handle_id_t handle_id)
+{
+	DEBUG_ASSERT(ctx);
+
+	if (unlikely(handle_id >= IPC_MAX_HANDLES)) {
+		LTRACEF("%d is invalid handle id\n", handle_id);
+		return ERR_BAD_HANDLE;
+	}
+
+	if (!bitmap_test(ctx->inuse, handle_id)) {
+		LTRACEF("%d is unused handle id\n", handle_id);
+		return ERR_NOT_FOUND;
+	}
+
+	/* there should be a handle there */
+	ASSERT(ctx->handles[handle_id]);
+
+	return NO_ERROR;
+}
+
+/*
+ *  Return handle id for specified handle
+ */
+static handle_id_t _handle_to_id_locked(uctx_t *ctx, handle_t *handle)
+{
+	DEBUG_ASSERT(ctx);
+
+	for (int i = 0; i < IPC_MAX_HANDLES; i++) {
+		if (ctx->handles[i] == handle) {
+			return i;
+		}
+	}
+	return INVALID_HANDLE_ID;
+}
+
+
+/*
+ *  Allocate and initialize user context - the structure that is used
+ *  to keep track handles on behalf of user space app. Exactly one user
+ *  context is created for each trusty app during it's nitialization.
+ */
 int uctx_create(void *priv, uctx_t **ctx)
 {
 	uctx_t *new_ctx;
 
+	DEBUG_ASSERT(ctx);
+
 	new_ctx = calloc(1, sizeof(uctx_t));
-	if (!new_ctx)
+	if (!new_ctx) {
+		LTRACEF("Out of memory\n");
 		return ERR_NO_MEMORY;
+	}
 
 	new_ctx->priv = priv;
 
-	mutex_init(&new_ctx->lock);
 	handle_list_init(&new_ctx->handle_list);
 
 	*ctx = new_ctx;
@@ -73,11 +130,14 @@ int uctx_create(void *priv, uctx_t **ctx)
 	return NO_ERROR;
 }
 
+/*
+ *   Destroy user context previously created by uctx_create.
+ */
 void uctx_destroy(uctx_t *ctx)
 {
 	int i;
+	DEBUG_ASSERT(ctx);
 
-	mutex_acquire(&ctx->lock);
 	for (i = 0; i < IPC_MAX_HANDLES; i++) {
 		if (ctx->handles[i]) {
 			TRACEF("destroying a non-empty uctx!!!\n");
@@ -86,227 +146,216 @@ void uctx_destroy(uctx_t *ctx)
 			ctx->handles[i] = NULL;
 		}
 	}
-	mutex_release(&ctx->lock);
 	free(ctx);
 }
 
+/*
+ *  Returns private data associated with user context. (Currently unused)
+ */
 void *uctx_get_priv(uctx_t *ctx)
 {
+	ASSERT(ctx);
 	return ctx->priv;
 }
 
-
-/* Note: The caller transfers its ownership (and thus its ref) of the handle
+/*
+ * The caller transfers an ownership (and thus its ref) of the handle
  * to this function, which is handed off to the handle table of the user
  * process.
  */
-int uctx_handle_install(uctx_t *ctx, handle_t *handle, int *id)
+int uctx_handle_install(uctx_t *ctx, handle_t *handle, handle_id_t *id)
 {
-	int ret = NO_ERROR;
 	int new_id;
 
-	mutex_acquire(&ctx->lock);
+	DEBUG_ASSERT(ctx);
+	DEBUG_ASSERT(handle);
+	DEBUG_ASSERT(id);
 
 	new_id = bitmap_ffz(ctx->inuse, IPC_MAX_HANDLES);
-	if (unlikely(new_id < 0)) {
-		ret = ERR_NO_RESOURCES;
-		goto out;
-	}
-	bitmap_set(ctx->inuse, new_id);
+	if (new_id < 0)
+		return ERR_NO_RESOURCES;
 
 	ASSERT(ctx->handles[new_id] == NULL);
 
+	bitmap_set(ctx->inuse, new_id);
 	ctx->handles[new_id] = handle;
 	handle_list_add(&ctx->handle_list, handle);
-	*id = new_id;
-out:
-	mutex_release(&ctx->lock);
-	return ret;
-}
-
-static inline int uctx_handle_id_remove_locked(
-		uctx_t *ctx, int handle_id, handle_t **handle_ptr)
-{
-	handle_t *handle;
-
-	if (unlikely(handle_id < 0 || handle_id >= IPC_MAX_HANDLES))
-		return ERR_BAD_HANDLE;
-	if (!bitmap_test(ctx->inuse, handle_id))
-		return ERR_BAD_HANDLE;
-
-	bitmap_clear(ctx->inuse, handle_id);
-	handle = ctx->handles[handle_id];
-	ctx->handles[handle_id] = NULL;
-	handle_list_del(&ctx->handle_list, handle);
-	*handle_ptr = handle;
+	*id = (handle_id_t) new_id;
 
 	return NO_ERROR;
 }
 
-static int uctx_handle_get_locked(uctx_t *ctx, int handle_id,
-				  handle_t **handle_ptr)
-{
-	handle_t *handle;
-
-	if (unlikely(handle_id < 0 || handle_id >= IPC_MAX_HANDLES))
-		return ERR_INVALID_ARGS;
-	if (!bitmap_test(ctx->inuse, handle_id))
-		return ERR_NOT_FOUND;
-
-	handle = ctx->handles[handle_id];
-	/* take a reference on the handle we looked up */
-	handle_incref(handle);
-
-	*handle_ptr = handle;
-	return NO_ERROR;
-}
-
-int uctx_handle_get(uctx_t *ctx, int handle_id, handle_t **handle_ptr)
-{
-	int ret;
-
-	mutex_acquire(&ctx->lock);
-	ret = uctx_handle_get_locked(ctx, handle_id, handle_ptr);
-	mutex_release(&ctx->lock);
-
-	return ret;
-}
-
-static int uctx_handle_find_id_locked(uctx_t *ctx, handle_t *handle,
-				      int *id_ptr)
-{
-	int i;
-
-	for (i = 0; i < IPC_MAX_HANDLES; i++) {
-		if (ctx->handles[i] == handle) {
-			*id_ptr = i;
-			return 0;
-		}
-	}
-	return ERR_NOT_FOUND;
-}
-
-/* fills in the handle that has a pending event. The reference taken by the list
- * is not dropped until the caller has had a chance to process the handle.
+/*
+ *   Retrieve handle from specified user context specified by
+ *   given handle_id. Increment ref count for returned handle.
  */
-int uctx_handle_wait_any(uctx_t *ctx, handle_t **handle_ptr,
-			 uint32_t *event_ptr, lk_time_t timeout)
+int uctx_handle_get(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr)
 {
-	return handle_list_wait(&ctx->handle_list, handle_ptr, event_ptr,
-				timeout);
+	DEBUG_ASSERT(ctx);
+	DEBUG_ASSERT(handle_ptr);
+
+	int ret = _check_handle_id (ctx, handle_id);
+	if (ret == NO_ERROR) {
+		handle_t *handle = ctx->handles[handle_id];
+		/* take a reference on the handle we looked up */
+		handle_incref(handle);
+		*handle_ptr = handle;
+	}
+
+	return ret;
 }
+
+/*
+ *  Detach handle specified by handle ID from given user context and
+ *  return it to caller.
+ */
+int uctx_handle_remove(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr)
+{
+	DEBUG_ASSERT(ctx);
+	DEBUG_ASSERT(handle_ptr);
+
+	int ret = _check_handle_id(ctx, handle_id);
+	if (ret == NO_ERROR) {
+		handle_t *handle = ctx->handles[handle_id];
+		bitmap_clear(ctx->inuse, handle_id);
+		ctx->handles[handle_id] = NULL;
+		handle_list_del(&ctx->handle_list, handle);
+		*handle_ptr = handle;
+	}
+
+	return ret;
+}
+
 
 /******************************************************************************/
 
 /* definition shared with userspace */
 typedef struct uevent {
-	int			handle;
+	uint32_t		handle;
 	uint32_t		event;
 	user_addr_t		cookie;
 } uevent_t;
 
-/* wait on integer handle id */
-long __SYSCALL sys_wait(int handle_id, user_addr_t user_event,
-			unsigned long timeout_msecs)
+/*
+ *   wait on single handle specified by handle id
+ */
+long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
+                        unsigned long timeout_msecs)
 {
-	trusty_app_t *tapp = uthread_get_current()->private_data;
-	uctx_t *ctx = tapp->uctx;
+	uctx_t *ctx = _get_uctx();
 	handle_t *handle;
 	uevent_t tmp_event;
 	int ret;
+
+	LTRACEF("[%p][%d]: %ld msec\n", uthread_get_current(),
+	                                handle_id, timeout_msecs);
 
 	ret = uctx_handle_get(ctx, handle_id, &handle);
-	if (ret)
+	if (ret != NO_ERROR)
 		return ret;
 
+	DEBUG_ASSERT(handle);
+
 	ret = handle_wait(handle, &tmp_event.event,
-			  MSECS_TO_LK_TIME(timeout_msecs));
-	if (ret != 0)
-		goto out;
-
-	tmp_event.handle = handle_id;
-	tmp_event.cookie = (user_addr_t)handle_get_cookie(handle);
-	copy_to_user(user_event, &tmp_event, sizeof(tmp_event));
-out:
-	handle_decref(handle);
-	return ret;
-}
-
-/* wait on integer handle id */
-long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
-{
-	trusty_app_t *tapp = uthread_get_current()->private_data;
-	uctx_t *ctx = tapp->uctx;
-	handle_t *handle;
-	uevent_t tmp_event;
-	int ret;
-	int find_ret;
-
-	LTRACE_ENTRY;
-
-	ret = uctx_handle_wait_any(ctx, &handle, &tmp_event.event,
-				   MSECS_TO_LK_TIME(timeout_msecs));
+		          MSECS_TO_LK_TIME(timeout_msecs));
 	if (ret <= 0) {
-		LTRACEF("erroring out? %d\n", ret);
+		/* en error or no events (timeout) */
 		goto out;
 	}
 
-	mutex_acquire(&ctx->lock);
-	find_ret = uctx_handle_find_id_locked(ctx, handle, &tmp_event.handle);
-	mutex_release(&ctx->lock);
+	/* got an event */
+	tmp_event.handle = handle_id;
+	tmp_event.cookie = (user_addr_t)handle_get_cookie(handle);
 
+	status_t status = copy_to_user(user_event, &tmp_event, sizeof(tmp_event));
+	if (status) {
+		/* failed to copy, propogate error to caller */
+		ret = (long) status;
+	}
+
+out:
+	/* drop handle_ref grabed by uctx_handle_get */
+	handle_decref(handle);
+
+	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
+	                                handle_id, ret);
+	return ret;
+}
+
+/*
+ *   Wait on any handle existing in user context.
+ */
+long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
+{
+	uctx_t *ctx = _get_uctx();
+	handle_t *handle;
+	uevent_t tmp_event;
+	int ret;
+
+	LTRACEF("[%p]: %ld msec\n", uthread_get_current(),
+	                            timeout_msecs);
+
+	/*
+	 * Get a handle that has a pending event. The returned handle has
+	 * extra ref taken.
+	 */
+	ret = handle_list_wait(&ctx->handle_list, &handle, &tmp_event.event,
+	                       MSECS_TO_LK_TIME(timeout_msecs));
+	if (ret <= 0) {
+		/* an error or no events (timeout) */
+		goto out;
+	}
+
+	DEBUG_ASSERT(handle); /* there should be a handle */
+
+	tmp_event.handle = _handle_to_id_locked(ctx, handle);
 	tmp_event.cookie = (user_addr_t)handle_get_cookie(handle);
 
 	/* drop the reference that was taken by wait_any */
 	handle_decref(handle);
 
-	if (find_ret) {
-		ret = ERR_NOT_READY;
-		goto out;
-	}
+	/* there should be a handle id */
+	DEBUG_ASSERT(tmp_event.handle > 0);
 
-	copy_to_user(user_event, &tmp_event, sizeof(tmp_event));
+	status_t status = copy_to_user(user_event, &tmp_event, sizeof(tmp_event));
+	if (status) {
+		/* failed to copy, propogate error to caller */
+		ret = status;
+	}
 out:
-	LTRACE_EXIT;
+	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
+	                                tmp_event.handle, ret);
 	return ret;
 }
 
-long __SYSCALL sys_close(int handle_id)
+long __SYSCALL sys_close(uint32_t handle_id)
 {
-	trusty_app_t *tapp = uthread_get_current()->private_data;
-	uctx_t *ctx = tapp->uctx;
 	handle_t *handle;
-	int ret;
 
-	mutex_acquire(&ctx->lock);
+	LTRACEF("[%p][%d]\n", uthread_get_current(),
+	                      handle_id);
 
-	LTRACEF("clearing out handle %d\n", handle_id);
-
-	ret = uctx_handle_id_remove_locked(ctx, handle_id, &handle);
-	mutex_release(&ctx->lock);
-
-	if (ret)
+	int ret = uctx_handle_remove(_get_uctx(), handle_id, &handle);
+	if (ret != NO_ERROR)
 		return ret;
 
-	LTRACEF("cleared out handle %d\n", handle_id);
-
 	handle_close(handle);
-	return 0;
+	return NO_ERROR;
 }
 
-long __SYSCALL sys_set_cookie(int handle_id, user_addr_t cookie)
+long __SYSCALL sys_set_cookie(uint32_t handle_id, user_addr_t cookie)
 {
-	trusty_app_t *tapp = uthread_get_current()->private_data;
-	uctx_t *ctx = tapp->uctx;
 	handle_t *handle;
-	int ret;
 
-	ret = uctx_handle_get(ctx, handle_id, &handle);
-	if (ret)
+	LTRACEF("[%p][%d]: cookie = 0x%08x\n", uthread_get_current(),
+	                              handle_id, (uint) cookie);
+
+	int ret = uctx_handle_get(_get_uctx(), handle_id, &handle);
+	if (ret != NO_ERROR)
 		return ret;
 
 	handle_set_cookie(handle, (void *)cookie);
 
 	handle_decref(handle);
-	return 0;
+	return NO_ERROR;
 }

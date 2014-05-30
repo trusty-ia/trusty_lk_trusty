@@ -31,12 +31,16 @@
 
 typedef struct uctx uctx_t;
 
+typedef uint32_t handle_id_t;
+
+#define INVALID_HANDLE_ID  (0xFFFFFFFFu)
+
 int uctx_create(void *priv, uctx_t **ctx);
 void uctx_destroy(uctx_t *ctx);
 void *uctx_get_priv(uctx_t *ctx);
 
-int uctx_handle_install(uctx_t *ctx, handle_t *handle, int *id);
-int uctx_handle_get(uctx_t *ctx, int handle_id, handle_t **handle_ptr);
-int uctx_handle_wait_any(uctx_t *ctx, handle_t **handle_ptr,
-			 uint32_t *event_ptr, lk_time_t timeout);
+int uctx_handle_install(uctx_t *ctx, handle_t *handle, handle_id_t *id);
+int uctx_handle_remove(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr);
+int uctx_handle_get(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr);
+
 #endif
