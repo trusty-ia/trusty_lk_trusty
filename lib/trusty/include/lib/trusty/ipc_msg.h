@@ -34,7 +34,7 @@
 
 typedef struct ipc_msg_queue ipc_msg_queue_t;
 
-int ipc_msg_queue_create(int num_items, size_t item_sz, ipc_msg_queue_t **mq);
+int ipc_msg_queue_create(uint num_items, size_t item_sz, ipc_msg_queue_t **mq);
 void ipc_msg_queue_destroy(ipc_msg_queue_t *mq);
 
 bool ipc_msg_queue_is_empty(ipc_msg_queue_t *mq);
@@ -48,18 +48,18 @@ bool ipc_msg_queue_is_full(ipc_msg_queue_t *mq);
 #define MAX_MSG_HANDLES	8
 
 typedef struct ipc_msg_kern {
-	int		num_iov;
+	uint		num_iov;
 	iovec_kern_t	*iov;
 
-	int		num_handles;
-	int		*handles;
+	uint		num_handles;
+	handle_id_t	*handles;
 } ipc_msg_kern_t;
 
 typedef struct ipc_msg_user {
-	int		num_iov;
+	uint		num_iov;
 	user_addr_t	iov;
 
-	int		num_handles;
+	uint		num_handles;
 	user_addr_t	handles;
 } ipc_msg_user_t;
 
