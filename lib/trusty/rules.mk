@@ -13,6 +13,7 @@ GLOBAL_INCLUDES += \
 MODULE_DEPS += \
 	lib/uthread \
 	lib/syscall \
+	lib/version \
 
 GLOBAL_DEFINES += \
 	WITH_SYSCALL_TABLE=1 \
