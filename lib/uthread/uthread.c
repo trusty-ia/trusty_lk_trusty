@@ -29,6 +29,8 @@
 #include <lk/init.h>
 #include <trace.h>
 
+#include <arch/uthread_mmu.h>  // for MAX_USR_VA
+
 /* Global list of all userspace threads */
 static struct list_node uthread_list;
 
@@ -61,12 +63,16 @@ static vaddr_t uthread_find_va_space(uthread_t *ut, size_t size,
 
 	/* find first fit */
 	list_for_every_entry(&ut->map_list, mp, uthread_map_t, node) {
-		if (end < mp->vaddr)
+		if (end <= mp->vaddr)
 			break;
 
 		start = MAX(start, ROUNDUP((mp->vaddr + mp->size), align));
 		end = start + size;
 	}
+
+	if (end > MAX_USR_VA || start > end)
+		return (vaddr_t) NULL;
+
 	return start;
 }
 
@@ -79,6 +85,9 @@ static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
 	uint32_t npages;
 
 	ASSERT(!(size & (PAGE_SIZE - 1)));
+
+	if (vaddr + size < vaddr)
+		return ERR_INVALID_ARGS;
 
 	if (flags & UTM_PHYS_CONTIG)
 		npages = 1;
@@ -105,6 +114,11 @@ static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
 			}
 			list_add_before(&mp_lst->node, &mp->node);
 			goto out;
+		} else {
+			if (mp->vaddr < (mp_lst->vaddr + mp_lst->size)) {
+				err = ERR_INVALID_ARGS;
+				goto err_free_mp;
+			}
 		}
 	}
 
@@ -125,15 +139,18 @@ static uthread_map_t *uthread_map_find(uthread_t *ut, vaddr_t vaddr, size_t size
 {
 	uthread_map_t *mp = NULL;
 
+	if (vaddr + size < vaddr)
+		return NULL;
+
 	/* TODO: Fuzzy comparisions for now */
 	list_for_every_entry(&ut->map_list, mp, uthread_map_t, node) {
 		if ((mp->vaddr <= vaddr) &&
 		    ((mp->vaddr + mp->size) >= (vaddr + size))) {
-			break;
+			return mp;
 		}
 	}
 
-	return mp;
+	return NULL;
 }
 
 /* caller ensures mp is in the mapping list */
