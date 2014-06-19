@@ -37,4 +37,18 @@ typedef struct iovec_user {
 	size_t		len;
 } iovec_user_t;
 
+
+ssize_t membuf_to_kern_iovec(const iovec_kern_t *iov, uint iov_cnt,
+                             const uint8_t *buf, size_t len);
+
+
+ssize_t kern_iovec_to_membuf(uint8_t *buf, size_t len,
+                             const iovec_kern_t *iov, uint iov_cnt);
+
+ssize_t membuf_to_user_iovec(user_addr_t iov_uaddr, uint iov_cnt,
+                             const uint8_t *buf, size_t cb);
+
+ssize_t user_iovec_to_membuf(uint8_t *buf, size_t len,
+                             user_addr_t iov_uaddr, uint iov_cnt);
+
 #endif

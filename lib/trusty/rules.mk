@@ -10,6 +10,7 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/uctx.c \
 	$(LOCAL_DIR)/ipc.c \
 	$(LOCAL_DIR)/ipc_msg.c \
+	$(LOCAL_DIR)/iovec.c
 
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/include \
