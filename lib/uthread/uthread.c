@@ -355,18 +355,42 @@ status_t copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
 	return NO_ERROR;
 }
 
-status_t strlcpy_from_user(char *kdest, user_addr_t usrc, size_t len)
+/*
+ * strncpy_from_user - copies up to specified number of charactes for user space string
+ * into specified buffer.
+ *
+ * On success, this function returns the number of characters copied (not counting
+ * NUL terminator) or ERR_FAULT otherwise, The resulting string will be unterminated
+ * if the buffer is not big enough to hold the whole string.
+ *
+ * Note: In this impelmentation source string cannot cross mapping segment boundary.
+ */
+ssize_t strncpy_from_user(char *kdst, user_addr_t usrc, size_t len)
 {
-	status_t rc;
+	uthread_map_t *mp;
 
-	/* TODO: properly implement this so that you the user doesn't need
-	 * to have a mapping extending from usrc to usrc + len, only up to
-	 * the actual length of string (i.e. to its '\0').
-	 */
+	mp = uthread_map_find (uthread_get_current(), usrc, 0);
+	if (!mp)
+		return (ssize_t) ERR_FAULT;
 
-	rc = copy_from_user(kdest, usrc, len);
-	kdest[len - 1] = '\0';
-	return rc;
+	/* TOOO: check mapping attributes */
+
+	size_t usrc_len = mp->size - (usrc - mp->vaddr);
+	char  *ksrc = (char*) usrc;
+
+	while (len--) {
+		if (usrc_len-- == 0) {
+			/* end of segment reached */
+			return (ssize_t) ERR_FAULT;
+		}
+		if (*ksrc == '\0') {
+			*kdst = '\0';
+			break;
+		}
+		*kdst++ = *ksrc++;
+	}
+
+	return (ssize_t) (ksrc - (char *)usrc);
 }
 
 #ifdef WITH_LIB_OTE
