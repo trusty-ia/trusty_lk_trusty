@@ -270,11 +270,14 @@ long __SYSCALL sys_port_create(user_addr_t path, uint num_recv_bufs,
 	char tmp_path[IPC_PORT_PATH_MAX];
 
 	/* copy path from user space */
-	/* TODO: We are always copying IPC_PORT_PATH_MAX bytes
-           of user memory here and very long path will be truncated.
-	 */
-	if (strlcpy_from_user(tmp_path, path, IPC_PORT_PATH_MAX))
-		return ERR_FAULT;
+	ret = (int) strncpy_from_user(tmp_path, path, sizeof(tmp_path));
+	if (ret < 0)
+		return (long) ret;
+
+	if ((uint)ret >= sizeof(tmp_path)) {
+		/* string is too long */
+		return ERR_INVALID_ARGS;
+	}
 
 	/* create new port */
 	ret = ipc_port_create(tmp_path, (uint) num_recv_bufs, recv_buf_size,
@@ -614,11 +617,12 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 	int ret;
 	handle_id_t handle_id;
 
-	/* TODO: We are always copying IPC_PORT_PATH_MAX bytes
-           of user memory here and very long path will be truncated.
-	 */
-	if (strlcpy_from_user(tmp_path, path, IPC_PORT_PATH_MAX))
-		return (long) ERR_FAULT;
+	ret = (int) strncpy_from_user(tmp_path, path, sizeof(tmp_path));
+	if (ret < 0)
+		return (long) ret;
+
+	if ((uint)ret >= sizeof(tmp_path))
+		return (long) ERR_INVALID_ARGS;
 
 	ret = ipc_port_connect(tmp_path, MSECS_TO_LK_TIME(timeout_msecs),
 			       &chandle);
