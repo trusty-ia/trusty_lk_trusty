@@ -94,7 +94,7 @@ static int ipc_port_create(const char *path, uint num_recv_bufs,
 
 	if (!num_recv_bufs || num_recv_bufs > IPC_CHAN_MAX_BUFS ||
 	    !recv_buf_size || recv_buf_size > IPC_CHAN_MAX_BUF_SIZE) {
-		LTRACEF("Invalid buffer sizes: %d x %d\n", 
+		LTRACEF("Invalid buffer sizes: %d x %d\n",
 		        num_recv_bufs, recv_buf_size);
 		return ERR_INVALID_ARGS;
 	}
@@ -105,14 +105,14 @@ static int ipc_port_create(const char *path, uint num_recv_bufs,
 		return ERR_NO_MEMORY;
 	}
 
-	ret = strlcpy(new_port->path, path, IPC_PORT_PATH_MAX);
+	ret = strlcpy(new_port->path, path, sizeof(new_port->path));
 	if (ret == 0) {
 		LTRACEF("path is empty\n");
 		ret = ERR_INVALID_ARGS;
 		goto err_copy_path;
 	}
 
-	if (ret > IPC_PORT_PATH_MAX) {
+	if ((uint) ret >= sizeof(new_port->path)) {
 		LTRACEF("path is too long (%d)\n", ret);
 		ret = ERR_TOO_BIG;
 		goto err_copy_path;
