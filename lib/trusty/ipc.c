@@ -29,9 +29,11 @@
 #include <string.h>
 #include <trace.h>
 #include <uthread.h>
+#include <platform.h>
 
 #include <lk/init.h>
 #include <kernel/mutex.h>
+#include <kernel/event.h>
 
 #include <lib/syscall.h>
 
@@ -44,6 +46,8 @@
 static struct list_node ipc_port_list = LIST_INITIAL_VALUE(ipc_port_list);
 
 mutex_t ipc_lock = MUTEX_INITIAL_VALUE(ipc_lock);
+
+static event_t srv_event = EVENT_INITIAL_VALUE(srv_event, false, 0);
 
 static uint32_t port_poll(handle_t *handle);
 static void port_shutdown(handle_t *handle);
@@ -245,6 +249,11 @@ static int ipc_port_publish(handle_t *phandle)
 	} else {
 		port->state = IPC_PORT_STATE_LISTENING;
 		list_add_tail(&ipc_port_list, &port->node);
+		/* kick all threads that are waiting for services */
+		enter_critical_section();
+		event_signal(&srv_event, false);
+		event_unsignal(&srv_event);
+		exit_critical_section();
 	}
 	mutex_release(&ipc_lock);
 
@@ -476,6 +485,33 @@ done:
 }
 
 
+/*
+ *  Lookup an existing port or wait for up to specified timeout
+ */
+static ipc_port_t *wait_for_port_locked(const char * path, lk_time_t timeout)
+{
+	lk_time_t elapsed = 0;
+	lk_time_t start_ts = current_time();
+
+	for (;;) {
+		ipc_port_t *port = port_find_locked(path);
+		if (port)
+			return port;
+
+		if (elapsed >= timeout)
+			return NULL;
+
+		/* wait for port to become available */
+		mutex_release(&ipc_lock);
+		event_wait_timeout (&srv_event, timeout - elapsed);
+		mutex_acquire(&ipc_lock);
+
+		if (timeout != INFINITE_TIME) {
+			/* keep track of elapsed time */
+			elapsed = current_time() - start_ts;
+		}
+	}
+}
 
 /*
  * Client requests a connection to a port. It can be called in context
@@ -495,7 +531,7 @@ int ipc_port_connect(const char *path, lk_time_t timeout,
 	mutex_acquire(&ipc_lock);
 
 	/* lookup an existing port */
-	port = port_find_locked(path);
+	port = wait_for_port_locked(path, timeout);
 	if (!port) {
 		LTRACEF("cannot find port '%s'\n", path);
 		ret = ERR_NOT_FOUND;
