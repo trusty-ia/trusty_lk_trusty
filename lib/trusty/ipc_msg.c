@@ -243,7 +243,7 @@ static int msg_write_locked(ipc_msg_queue_t *mq, msg_desc_t *msg)
 			return ERR_NOT_SUPPORTED;
 		}
 		ret = kern_iovec_to_membuf(buf, mq->item_sz,
-		                          (const iovec_kern_t *)&msg->kern.iov,
+		                          (const iovec_kern_t *)msg->kern.iov,
 		                           msg->kern.num_iov);
 	} else if (msg->type == IPC_MSG_BUFFER_USER) {
 		if (msg->user.num_handles) {
@@ -294,7 +294,7 @@ static int msg_read_locked(ipc_msg_queue_t *mq, uint32_t msg_id,
 		return ERR_NOT_SUPPORTED;
 	}
 
-	if (offset >= item->len) {
+	if (offset > item->len) {
 		LTRACEF("invalid offset %d\n", offset);
 		return ERR_INVALID_ARGS;
 	}
@@ -307,7 +307,7 @@ static int msg_read_locked(ipc_msg_queue_t *mq, uint32_t msg_id,
 			LTRACEF("handles are not supported yet\n");
 			return ERR_NOT_SUPPORTED;
 		}
-		return membuf_to_kern_iovec((const iovec_kern_t *)&msg->kern.iov,
+		return membuf_to_kern_iovec((const iovec_kern_t *)msg->kern.iov,
 		                            msg->kern.num_iov,
 		                            buf, bytes_left);
 	} else if (msg->type == IPC_MSG_BUFFER_USER) {
