@@ -36,6 +36,7 @@
 
 #ifdef WITH_LIB_OTE
 #include <lib/ote.h>
+#include <kernel/event.h>
 #endif
 
 #define PF_TO_UTM_FLAGS(x) ((((x) & PF_R) ? UTM_R : 0) | \
@@ -73,6 +74,7 @@ typedef struct trusty_app
 #ifdef WITH_LIB_OTE
 	u_int ote_sessions;
 	ote_app_props_t ote_props;
+	event_t ote_event;
 #endif
 
 	Elf32_Ehdr *elf_hdr;
