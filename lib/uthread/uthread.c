@@ -68,8 +68,48 @@ static void uthread_free_utid(uint32_t utid)
 {
 }
 
-static vaddr_t uthread_find_va_space(uthread_t *ut, size_t size,
-		u_int flags, u_int align)
+
+static vaddr_t uthread_find_va_space_ns(uthread_t *ut, size_t size, u_int align)
+{
+	vaddr_t start, end;
+	uthread_map_t *mp;
+
+	/* get first suitable address */
+	start = ROUNDDOWN(MAX_USR_VA - size, align);
+	end = start + size;
+
+	mp = list_peek_tail_type (&ut->map_list, uthread_map_t, node);
+	while (mp) {
+		if (start >= mp->vaddr + mp->size) { /* found gap */
+
+			if (start >= ut->ns_va_bottom)
+				break; /* the whole map fits above ns_va_bottom */
+
+			/* check if we can move ns_va_bottom */
+			DEBUG_ASSERT((mp->flags & UTM_NS_MEM) == 0);
+			if (ROUNDDOWN(start, UT_MAP_ALIGN_1MB) < mp->vaddr + mp->size)
+				return (vaddr_t) NULL; /*  nope, we can't */
+
+			break;
+		}
+
+		if (!(mp->flags & UTM_NS_MEM))
+			return (vaddr_t) NULL;  /* next mp is non-NS */
+
+		start = MIN(start, ROUNDDOWN((mp->vaddr - size), align));
+		end = start + size;
+
+		/* get prev list item */
+		mp = list_prev_type(&ut->map_list, &mp->node, uthread_map_t, node);
+	}
+
+	if (start < ut->start_stack || start > end)
+		return (vaddr_t) NULL;
+
+	return start;
+}
+
+static vaddr_t uthread_find_va_space_sec(uthread_t *ut, size_t size, u_int align)
 {
 	vaddr_t start, end;
 	uthread_map_t *mp;
@@ -86,10 +126,19 @@ static vaddr_t uthread_find_va_space(uthread_t *ut, size_t size,
 		end = start + size;
 	}
 
-	if (end > MAX_USR_VA || start > end)
+	if (end > ut->ns_va_bottom || start > end)
 		return (vaddr_t) NULL;
 
 	return start;
+}
+
+static vaddr_t uthread_find_va_space(uthread_t *ut, size_t size,
+		u_int flags, u_int align)
+{
+	if (flags & UTM_NS_MEM)
+		return uthread_find_va_space_ns(ut, size, align);
+	else
+		return uthread_find_va_space_sec(ut, size, align);
 }
 
 static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
@@ -122,12 +171,21 @@ static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
 	mp->align = align;
 	memcpy(mp->pfn_list, pfn_list, npages*sizeof(paddr_t));
 
+
+	vaddr_t new_ns = ut->ns_va_bottom;
+	if ((mp->flags & UTM_NS_MEM) && (mp->vaddr < ut->ns_va_bottom)) {
+		/* Move ns_va_bottom down.
+		   It is verified during NS VA allocation */
+		new_ns = ROUNDDOWN(mp->vaddr, UT_MAP_ALIGN_1MB);
+	}
+
 	list_for_every_entry(&ut->map_list, mp_lst, uthread_map_t, node) {
 		if (mp_lst->vaddr > mp->vaddr) {
 			if((mp->vaddr + mp->size) > mp_lst->vaddr) {
 				err = ERR_INVALID_ARGS;
 				goto err_free_mp;
 			}
+			ut->ns_va_bottom = new_ns;
 			list_add_before(&mp_lst->node, &mp->node);
 			goto out;
 		} else {
@@ -138,6 +196,7 @@ static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
 		}
 	}
 
+	ut->ns_va_bottom = new_ns;
 	list_add_tail(&ut->map_list, &mp->node);
 out:
 	if (mpp)
@@ -172,6 +231,29 @@ static uthread_map_t *uthread_map_find(uthread_t *ut, vaddr_t vaddr, size_t size
 /* caller ensures mp is in the mapping list */
 static void uthread_map_remove(uthread_t *ut, uthread_map_t *mp)
 {
+	if (mp->flags & UTM_NS_MEM) {
+		uthread_map_t *item;
+
+		/* check if we need to move ns_va_bottom up */
+		item = list_prev_type(&ut->map_list, &mp->node,
+		                       uthread_map_t, node);
+
+		if (!item || (item->flags & UTM_NS_MEM) == 0) {
+			/* removing bottom NS mapping, so next ns_va_bottom is
+			   rounded down to 1M start of next in list ns segment
+			   or MAX_USR_VA if none exists */
+			item = list_next_type(&ut->map_list, &mp->node,
+		                       uthread_map_t, node);
+			if (item) {
+				DEBUG_ASSERT(item->flags & UTM_NS_MEM);
+				ut->ns_va_bottom = ROUNDDOWN(item->vaddr,
+				                          UT_MAP_ALIGN_1MB);
+			} else {
+				ut->ns_va_bottom = MAX_USR_VA;
+			}
+		}
+	}
+
 	list_delete(&mp->node);
 	free(mp);
 }
@@ -203,6 +285,7 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 	ut->id = uthread_alloc_utid();
 	ut->private_data = private_data;
 	ut->entry = entry;
+	ut->ns_va_bottom = MAX_USR_VA;
 
 	/* Allocate and map in a stack region */
 	ut->stack = memalign(PAGE_SIZE, stack_size);
@@ -517,7 +600,7 @@ status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
 	vaddr_src = ROUNDDOWN(vaddr_src, PAGE_SIZE);
 
 	if (ns_src) {
-		align = UT_MAP_ALIGN_1MB;
+		align = UT_MAP_ALIGN_4KB;
 		flags |= UTM_NS_MEM;
 	} else {
 		uthread_map_t *mp_src;

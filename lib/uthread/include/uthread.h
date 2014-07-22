@@ -88,6 +88,7 @@ typedef struct uthread
 
 	struct list_node map_list;
 	mutex_t mmap_lock;
+	vaddr_t ns_va_bottom;
 
 	/* uthread ID, unique per thread */
 	uint32_t id;
