@@ -194,6 +194,13 @@ static void arm_write_v2p(vaddr_t vaddr, v2p_t v2p)
 			);
 			break;
 
+		case ATS1CUW:
+			__asm__ volatile(
+				"mcr	p15, 0, %0, c7, c8, 3	\n"
+				: : "r"(vaddr)
+			);
+			break;
+
 		case ATS1CPR:
 			__asm__ volatile(
 				"mcr	p15, 0, %0, c7, c8, 0	\n"
@@ -205,6 +212,13 @@ static void arm_write_v2p(vaddr_t vaddr, v2p_t v2p)
 		case ATS12NSOUR:
 			__asm__ volatile(
 				"mcr	p15, 0, %0, c7, c8, 6	\n"
+				: : "r"(vaddr)
+			);
+			break;
+
+		case ATS12NSOUW:
+			__asm__ volatile(
+				"mcr	p15, 0, %0, c7, c8, 7	\n"
 				: : "r"(vaddr)
 			);
 			break;
@@ -247,7 +261,10 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src
 	u_int l1_flags, l2_flags;
 	status_t err = NO_ERROR;
 
-	type = ns_src ? ATS12NSOUR : ATS1CUR;
+	type = (flags & UTM_W) ?
+		(ns_src ? ATS12NSOUW : ATS1CUW) :
+		(ns_src ? ATS12NSOUR : ATS1CUR);
+
 	l1_flags = (flags & UTM_NS_MEM) ? MMU_MEMORY_L1_PAGETABLE_NON_SECURE : 0;
 	l2_flags = (flags & UTM_W) ? MMU_MEMORY_L2_AP_P_RW_U_RW :
 				     MMU_MEMORY_L2_AP_P_RW_U_RO;

@@ -72,7 +72,9 @@
 /* virt -> phys address translation args */
 typedef enum {
 	ATS1CUR,
+	ATS1CUW,
 	ATS12NSOUR,
+	ATS12NSOUW,
 	ATS1CPR,
 	ATS12NSOPR,
 } v2p_t;
