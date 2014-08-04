@@ -29,6 +29,7 @@
 #include <compiler.h>
 #include <err.h>
 #include <kernel/thread.h>
+#include <kernel/mutex.h>
 #include <arch/uthread.h>
 
 typedef uintptr_t user_addr_t;
@@ -86,6 +87,7 @@ typedef struct uthread
 	void *stack;
 
 	struct list_node map_list;
+	mutex_t mmap_lock;
 
 	/* uthread ID, unique per thread */
 	uint32_t id;

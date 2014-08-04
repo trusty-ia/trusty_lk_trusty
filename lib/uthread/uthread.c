@@ -29,6 +29,8 @@
 #include <lk/init.h>
 #include <trace.h>
 
+#include <kernel/mutex.h>
+
 #include <arch/uthread_mmu.h>  // for MAX_USR_VA
 
 /* Global list of all userspace threads */
@@ -36,6 +38,20 @@ static struct list_node uthread_list;
 
 /* Monotonically increasing thread id for now */
 static uint32_t next_utid;
+
+
+static inline void mmap_lock(uthread_t *ut)
+{
+	DEBUG_ASSERT(ut);
+	mutex_acquire(&ut->mmap_lock);
+}
+
+static inline void mmap_unlock(uthread_t *ut)
+{
+	DEBUG_ASSERT(ut);
+	mutex_release(&ut->mmap_lock);
+}
+
 
 /* TODO: implement a utid hashmap */
 static uint32_t uthread_alloc_utid(void)
@@ -182,6 +198,7 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 		goto err_done;
 
 	list_initialize(&ut->map_list);
+	mutex_init(&ut->mmap_lock);
 
 	ut->id = uthread_alloc_utid();
 	ut->private_data = private_data;
@@ -273,8 +290,8 @@ void uthread_context_switch(thread_t *oldthread, thread_t *newthread)
 	arch_uthread_context_switch(old_ut, new_ut);
 }
 
-status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t *pfn_list,
-		size_t size, u_int flags, u_int align)
+static status_t uthread_map_locked(uthread_t *ut, vaddr_t *vaddrp,
+		paddr_t *pfn_list, size_t size, u_int flags, u_int align)
 {
 	uthread_map_t *mp = NULL;
 	status_t err = NO_ERROR;
@@ -307,7 +324,18 @@ done:
 	return err;
 }
 
-status_t uthread_unmap(uthread_t *ut, vaddr_t vaddr, size_t size)
+status_t uthread_map(uthread_t *ut, vaddr_t *vaddrp, paddr_t *pfn_list,
+		size_t size, u_int flags, u_int align)
+{
+	status_t err;
+
+	mmap_lock(ut);
+	err = uthread_map_locked(ut, vaddrp, pfn_list, size, flags, align);
+	mmap_unlock(ut);
+	return err;
+}
+
+static status_t uthread_unmap_locked(uthread_t *ut, vaddr_t vaddr, size_t size)
 {
 	uthread_map_t *mp;
 	status_t err = NO_ERROR;
@@ -332,9 +360,24 @@ done:
 	return err;
 }
 
+status_t uthread_unmap(uthread_t *ut, vaddr_t vaddr, size_t size)
+{
+	status_t err;
+
+	mmap_lock(ut);
+	err = uthread_unmap_locked(ut, vaddr, size);
+	mmap_unlock(ut);
+	return err;
+}
+
 bool uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size)
 {
-	return uthread_map_find(ut, vaddr, size) != NULL ? true : false;
+	bool ret;
+
+	mmap_lock(ut);
+	ret = uthread_map_find(ut, vaddr, size) != NULL ? true : false;
+	mmap_unlock(ut);
+	return ret;
 }
 
 status_t copy_from_user(void *kdest, user_addr_t usrc, size_t len)
@@ -368,10 +411,14 @@ status_t copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
 ssize_t strncpy_from_user(char *kdst, user_addr_t usrc, size_t len)
 {
 	uthread_map_t *mp;
+	uthread_t *ut = uthread_get_current();
 
-	mp = uthread_map_find (uthread_get_current(), usrc, 0);
-	if (!mp)
+	mmap_lock(ut);
+	mp = uthread_map_find (ut, usrc, 0);
+	mmap_unlock(ut);
+	if (!mp) {
 		return (ssize_t) ERR_FAULT;
+	}
 
 	/* TOOO: check mapping attributes */
 
@@ -394,14 +441,53 @@ ssize_t strncpy_from_user(char *kdst, user_addr_t usrc, size_t len)
 }
 
 #ifdef WITH_LIB_OTE
+
+static inline void mmap_lock_pair (uthread_t *source, uthread_t *target)
+{
+	DEBUG_ASSERT(source != target);
+
+	/* source can be NULL */
+	/* target cannot be NULL */
+
+	if (target < source)
+		mmap_lock(target);
+
+	if (source)
+		mmap_lock(source);
+
+	if (target > source)
+		mmap_lock(target);
+}
+
+static inline void mmap_unlock_pair (uthread_t *source, uthread_t *target)
+{
+	DEBUG_ASSERT(source != target);
+
+	/* source can be NULL */
+	/* target cannot be NULL */
+
+	if (target > source)
+		mmap_unlock(target);
+
+	if (source)
+		mmap_unlock(source);
+
+	if (target < source)
+		mmap_unlock(target);
+}
+
 status_t uthread_virt_to_phys(uthread_t *ut, vaddr_t vaddr, paddr_t *paddr)
 {
 	uthread_map_t *mp;
 	u_int offset = vaddr & (PAGE_SIZE -1);
+	status_t err;
 
+	mmap_lock(ut);
 	mp = uthread_map_find(ut, vaddr, 0);
-	if (!mp)
-		return ERR_INVALID_ARGS;
+	if (!mp) {
+		err = ERR_INVALID_ARGS;
+		goto err_out;
+	}
 
 	if (mp->flags & UTM_PHYS_CONTIG) {
 		*paddr = mp->pfn_list[0] + (vaddr - mp->vaddr);
@@ -409,7 +495,10 @@ status_t uthread_virt_to_phys(uthread_t *ut, vaddr_t vaddr, paddr_t *paddr)
 		uint32_t pg = (vaddr - mp->vaddr) / PAGE_SIZE;
 		*paddr = mp->pfn_list[pg] + offset;
 	}
-	return NO_ERROR;
+	err = NO_ERROR;
+err_out:
+	mmap_unlock(ut);
+	return err;
 }
 
 status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
@@ -420,6 +509,10 @@ status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
 	status_t err;
 	u_int offset;
 
+	uthread_t *ut_src = ns_src ? NULL : uthread_get_current();
+
+	mmap_lock_pair(ut_src, ut_target);
+
 	offset = vaddr_src & (PAGE_SIZE -1);
 	vaddr_src = ROUNDDOWN(vaddr_src, PAGE_SIZE);
 
@@ -427,7 +520,6 @@ status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
 		align = UT_MAP_ALIGN_1MB;
 		flags |= UTM_NS_MEM;
 	} else {
-		uthread_t *ut_src = uthread_get_current();
 		uthread_map_t *mp_src;
 
 		mp_src = uthread_map_find(ut_src, vaddr_src, size);
@@ -477,6 +569,7 @@ err_free_pfn_list:
 	if (pfn_list)
 		free(pfn_list);
 err_out:
+	mmap_unlock_pair(ut_src, ut_target);
 	return err;
 }
 
