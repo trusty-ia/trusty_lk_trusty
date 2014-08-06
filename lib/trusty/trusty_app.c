@@ -38,6 +38,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <uthread.h>
+#include <lk/init.h>
 
 #include <lib/trusty/trusty_app.h>
 
@@ -562,14 +563,6 @@ void trusty_app_init()
 			dprintf(CRITICAL, "failed to load address map\n");
 			halt();
 		}
-
-		if (trusty_app->ut->entry) {
-			ret = uthread_start(trusty_app->ut);
-			if (ret) {
-				dprintf(CRITICAL, "cannot start user thread\n");
-				halt();
-			}
-		}
 	}
 }
 
@@ -585,3 +578,20 @@ trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid)
 
 	return NULL;
 }
+
+static void start_apps(uint level)
+{
+	trusty_app_t *trusty_app;
+	u_int i;
+	int ret;
+
+	for (i = 0, trusty_app = trusty_app_list; i < trusty_app_count; i++, trusty_app++) {
+		if (trusty_app->ut->entry) {
+			ret = uthread_start(trusty_app->ut);
+			if (ret)
+				panic("Cannot start Trusty app!\n");
+		}
+	}
+}
+
+LK_INIT_HOOK(libtrusty_apps, start_apps, LK_INIT_LEVEL_APPS + 1);
