@@ -80,6 +80,7 @@ err_undo_maps:
 	for(u_int p = 0; p < pg; p++)
 		arm_mmu_unmap_section(mp->vaddr + (p * PAGE_SIZE_1M));
 
+	DSB;	/* TLB invalidation completes only after DSB */
 	return ERR_INVALID_ARGS;
 }
 
@@ -93,5 +94,6 @@ status_t arch_kunmap(kmap_t *mp)
 		arm_mmu_unmap_section(vaddr);
 	}
 
+	DSB;	/* TLB invalidation completes only after DSB */
 	return NO_ERROR;
 }
