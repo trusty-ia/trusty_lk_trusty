@@ -49,6 +49,7 @@ static void arm_uthread_mmu_init(uint level)
 	arm_write_ttbcr(MMU_MEMORY_TTBCR_N);
 
 	arm_invalidate_tlb();
+	DSB;	/* TLB invalidation completes only after DSB */
 }
 
 LK_INIT_HOOK_FLAGS(libuthreadarmmmu, arm_uthread_mmu_init,
@@ -166,6 +167,7 @@ status_t arm_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr)
 	level_2[idx] = 0;	/* invalid entry */
 	DSB;
 	arm_invalidate_tlb_vaddr(vaddr, ut->arch.asid);
+	DSB;	/* TLB invalidation completes only after DSB */
 
 done:
 	return err;
