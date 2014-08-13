@@ -111,20 +111,26 @@ SECTIONS
   .preinit_array     :
   {
     PROVIDE_HIDDEN (__preinit_array_start = .);
+    KEEP (*crtbegin*.o(.preinit_array))
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .preinit_array))
     KEEP (*(.preinit_array))
     PROVIDE_HIDDEN (__preinit_array_end = .);
   }
   .init_array     :
   {
     PROVIDE_HIDDEN (__init_array_start = .);
+    KEEP (*crtbegin*.o(.init_array))
     KEEP (*(SORT(.init_array.*)))
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .init_array))
     KEEP (*(.init_array))
     PROVIDE_HIDDEN (__init_array_end = .);
   }
   .fini_array     :
   {
     PROVIDE_HIDDEN (__fini_array_start = .);
+    KEEP (*crtbegin*.o(.fini_array))
     KEEP (*(SORT(.fini_array.*)))
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .fini_array))
     KEEP (*(.fini_array))
     PROVIDE_HIDDEN (__fini_array_end = .);
   }
