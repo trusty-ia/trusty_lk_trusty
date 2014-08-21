@@ -187,6 +187,7 @@ SECTIONS
       .bss section disappears because there are no input sections.
       FIXME: Why do we need it? When there is no .bss section, we don't
       pad the .data section.  */
+   BYTE(0);
    . = ALIGN(. != 0 ? 32 / 8 : 1);
   }
   _bss_end__ = . ; __bss_end__ = . ;
