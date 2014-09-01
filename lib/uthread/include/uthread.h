@@ -163,7 +163,7 @@ static inline uthread_t *uthread_get_current(void)
 status_t uthread_virt_to_phys(uthread_t *ut, vaddr_t vaddr, paddr_t *paddr);
 
 /* Grant pages from current context into target uthread */
-status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
+status_t uthread_grant_pages(uthread_t *ut_target, ext_vaddr_t vaddr_src,
 		size_t size, u_int flags, vaddr_t *vaddr_target, bool ns_src);
 
 /* Revoke mappings from a previous grant */

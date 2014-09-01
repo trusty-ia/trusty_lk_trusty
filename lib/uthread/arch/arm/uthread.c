@@ -184,7 +184,7 @@ done:
 }
 
 #ifdef WITH_LIB_OTE
-static void arm_write_v2p(vaddr_t vaddr, v2p_t v2p)
+static void arm_write_v2p(ext_vaddr_t vaddr, v2p_t v2p)
 {
 	switch(v2p) {
 		case ATS1CUR:
@@ -208,25 +208,32 @@ static void arm_write_v2p(vaddr_t vaddr, v2p_t v2p)
 			);
 			break;
 
+		/* NS vaddrs can be 64-bits wide. Pass the lower bits as an arg
+		 * to mcr and higher bits in a separate register. The monitor
+		 * assembles them into a 64-bit register before translation
+		 */
 
 		case ATS12NSOUR:
 			__asm__ volatile(
+				"mov	r0, %H0	\n"
 				"mcr	p15, 0, %0, c7, c8, 6	\n"
-				: : "r"(vaddr)
+				: : "r"(vaddr) : "r0"
 			);
 			break;
 
 		case ATS12NSOUW:
 			__asm__ volatile(
+				"mov	r0, %H0	\n"
 				"mcr	p15, 0, %0, c7, c8, 7	\n"
-				: : "r"(vaddr)
+				: : "r"(vaddr) : "r0"
 			);
 			break;
 
 		case ATS12NSOPR:
 			__asm__ volatile(
+				"mov	r0, %H0	\n"
 				"mcr	p15, 0, %0, c7, c8, 4	\n"
-				: : "r"(vaddr)
+				: : "r"(vaddr) : "r0"
 			);
 			break;
 
@@ -252,12 +259,13 @@ static uint64_t arm_read_par(void)
 }
 
 /* Translate vaddr from current context and map into target uthread */
-status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src,
+status_t arch_uthread_translate_map(struct uthread *ut_target, ext_vaddr_t vaddr_src,
 		vaddr_t vaddr_target, paddr_t *pfn_list,
 		uint32_t npages, u_int flags, bool ns_src)
 {
 	u_int type, pg;
-	vaddr_t vs, vt;
+	ext_vaddr_t vs;
+	vaddr_t vt;
 	u_int l1_flags, l2_flags;
 	status_t err = NO_ERROR;
 
@@ -284,9 +292,9 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src
 
 		if (par & PAR_ATTR_FAULTED) {
 			dprintf(CRITICAL,
-				"failed %s user read V2P (v = 0x%08x, par = 0x%016llx)\n",
+				"failed %s user read V2P (v = 0x%016llx, par = 0x%016llx)\n",
 				(flags & UTM_NS_MEM) ? "NS" : "SEC",
-				(u_int)vs, par);
+				vs, par);
 			err = ERR_NOT_VALID;
 			goto err_out;
 		}

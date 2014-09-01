@@ -584,7 +584,7 @@ err_out:
 	return err;
 }
 
-status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
+status_t uthread_grant_pages(uthread_t *ut_target, ext_vaddr_t vaddr_src,
 		size_t size, u_int flags, vaddr_t *vaddr_target, bool ns_src)
 {
 	u_int align, npages;
@@ -605,7 +605,11 @@ status_t uthread_grant_pages(uthread_t *ut_target, vaddr_t vaddr_src,
 	} else {
 		uthread_map_t *mp_src;
 
-		mp_src = uthread_map_find(ut_src, vaddr_src, size);
+		/* Only a vaddr_t sized vaddr_src is supported
+		 * for secure src -> secure target mappings.
+		 */
+		ASSERT(vaddr_src == (vaddr_t)vaddr_src);
+		mp_src = uthread_map_find(ut_src, (vaddr_t)vaddr_src, size);
 		if (!mp_src) {
 			err = ERR_INVALID_ARGS;
 			goto err_out;

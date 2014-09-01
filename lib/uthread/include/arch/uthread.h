@@ -32,6 +32,9 @@
 struct uthread;
 struct uthread_map;
 
+/* Holds a vaddr large enough for 32 or 64 bit clients */
+typedef uint64_t ext_vaddr_t;
+
 void arch_uthread_init(void);
 
 status_t arch_uthread_create(struct uthread *ut);
@@ -44,7 +47,7 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp);
 status_t arch_uthread_unmap(struct uthread *ut, struct uthread_map *mp);
 
 #ifdef WITH_LIB_OTE
-status_t arch_uthread_translate_map(struct uthread *ut_target, vaddr_t vaddr_src,
+status_t arch_uthread_translate_map(struct uthread *ut_target, ext_vaddr_t vaddr_src,
 		vaddr_t vaddr_target, paddr_t *pfn_list,
 		uint32_t npages, u_int flags, bool ns_src);
 #endif
