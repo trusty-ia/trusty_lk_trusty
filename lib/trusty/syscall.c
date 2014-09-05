@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <platform.h>
 #include <uthread.h>
 #include <lib/trusty/trusty_app.h>
 
@@ -111,4 +112,12 @@ long sys_nanosleep(uint32_t clock_id, uint32_t flags, uint64_t sleep_time)
 	thread_sleep(MSECS_TO_LK_TIME(DIV_ROUND_UP(sleep_time, 1000 * 1000)));
 
 	return NO_ERROR;
+}
+
+long sys_gettime(uint32_t clock_id, uint32_t flags, int64_t *time)
+{
+	// return time in nanoseconds
+	lk_bigtime_t t = current_time_hires() * 1000;
+
+	return copy_to_user((user_addr_t)time, &t, sizeof(int64_t));
 }

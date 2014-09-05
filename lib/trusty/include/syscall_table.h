@@ -32,6 +32,7 @@ DEF_SYSCALL(0x3, exit_group, long, 0)
 DEF_SYSCALL(0x4, read, long, 3, uint32_t fd, void* msg, uint32_t size)
 DEF_SYSCALL(0x5, ioctl, long, 3, uint32_t fd, uint32_t req, void* buf)
 DEF_SYSCALL(0x6, nanosleep, long, 3, uint32_t clock_id, uint32_t flags, uint64_t sleep_time)
+DEF_SYSCALL(0x7, gettime, long, 3, uint32_t clock_id, uint32_t flags, int64_t *time)
 
 /* IPC connection establishement syscalls */
 DEF_SYSCALL(0x10, port_create, long, 4, const char *path, uint num_recv_bufs, size_t recv_buf_size, uint32_t flags)
