@@ -533,7 +533,11 @@ void trusty_app_init()
 		uthread_t *uthread;
 		int ret;
 
-		snprintf(name, sizeof(name), "trusty_app_%d", (i + 1));
+		snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x",
+			 i,
+			 trusty_app->props.uuid.time_low,
+			 trusty_app->props.uuid.time_mid,
+			 trusty_app->props.uuid.time_hi_and_version);
 
 		/* entry is 0 at this point since we haven't parsed the elf hdrs
 		 * yet */
