@@ -79,6 +79,31 @@ typedef enum {
 	ATS12NSOPR,
 } v2p_t;
 
+/* 48-bit physical address 47:12 */
+#define NS_PTE_PHYSADDR(pte)		((pte) & 0xFFFFFFFFF000ULL)
+
+/* Access permissions AP[2:1]
+ *	EL0	EL1
+ * 00	None	RW
+ * 01	RW	RW
+ * 10	None	RO
+ * 11	RO	RO
+ */
+#define NS_PTE_AP(pte)			(((pte) >> 6) & 0x3)
+#define NS_PTE_AP_U_RW(pte)		(NS_PTE_AP(pte) == 0x1)
+
+/* Shareablility attrs */
+#define NS_PTE_ATTR_SHAREABLE(pte)	(((pte) >> 8) & 0x3)
+
+/* cache attrs encoded in the top bits 55:49 of the PTE*/
+#define NS_PTE_ATTR_MAIR(pte)	(((pte) >> 48) & 0xFF)
+
+/* Inner cache attrs MAIR_ATTR_N[3:0] */
+#define NS_PTE_ATTR_INNER(pte)	((NS_PTE_ATTR_MAIR(pte)) & 0xF)
+
+/* Outer cache attrs MAIR_ATTR_N[7:4] */
+#define NS_PTE_ATTR_OUTER(pte)	(((NS_PTE_ATTR_MAIR(pte)) & 0xF0) >> 4)
+
 #endif /* WITH_LIB_OTE */
 
 typedef enum {

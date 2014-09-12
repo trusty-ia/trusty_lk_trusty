@@ -258,10 +258,46 @@ static uint64_t arm_read_par(void)
 	return ((uint64_t)higher << 32) | lower;
 }
 
+
+/* TEX[1:0] and CB mapping:
+ *
+ * 00	Non-cacheable
+ * 01	Write-back, Write-allocate
+ * 10	Write-through, no Write-allocate
+ * 11	Write-back, no Write-allocate
+ *
+ * MAIR mappings
+ *
+ * 0100		Non-cacheable
+ * 00RW,10RW	Write-through
+ * 01RW,11RW	Write-back
+ *
+ */
+static u_int mair_to_cb [] = {
+	/* 0000 */	0x4,	/* Error! Device memory */
+	/* 0001 */	0x2,	/* write through transient, write allocate */
+	/* 0010 */	0x2,	/* write through transient, read allocate */
+	/* 0011 */	0x2,	/* write through transient, read/write allocate */
+	/* 0100 */	0x0,	/* Non-cacheable */
+	/* 0101 */	0x1,	/* write back transient, write allocate */
+	/* 0110 */	0x3,	/* write back transient, read allocate */
+	/* 0111 */	0x1,	/* write back transient, read/write allocate */
+	/* 1000 */	0x2,	/* write through non-transient */
+	/* 1001 */	0x2,	/* write through non-transient, write allocate */
+	/* 1010 */	0x2,	/* write through non-transient, read allocate */
+	/* 1011 */	0x2,	/* write through non-transient, read/write allocate */
+	/* 1100 */	0x3,	/* write back non-transient */
+	/* 1101 */	0x1,	/* write back non-transient, write allocate */
+	/* 1110 */	0x3,	/* write back non-transient, read allocate */
+	/* 1111 */	0x1,	/* write back non-transient, read/write allocate */
+};
+
 /* Translate vaddr from current context and map into target uthread */
-status_t arch_uthread_translate_map(struct uthread *ut_target, ext_vaddr_t vaddr_src,
-		vaddr_t vaddr_target, paddr_t *pfn_list,
-		uint32_t npages, u_int flags, bool ns_src)
+status_t arch_uthread_translate_map(struct uthread *ut_target,
+				    ext_vaddr_t vaddr_src,
+				    vaddr_t vaddr_target, paddr_t *pfn_list,
+				    uint32_t npages, u_int flags, bool ns_src,
+				    uint64_t *ns_pte_list)
 {
 	u_int type, pg;
 	ext_vaddr_t vs;
@@ -285,32 +321,66 @@ status_t arch_uthread_translate_map(struct uthread *ut_target, ext_vaddr_t vaddr
 		uint64_t par;
 		uint64_t physaddr;
 
-		enter_critical_section();
-		arm_write_v2p(vs, type);
-		par = arm_read_par();
-		exit_critical_section();
+		if (ns_src) {
+			/* Get physaddr and attr from the list of ptes
+			 *
+			 * !!! This code only works if ptes are ARM v8
+			 *     VMSAv8-64 level 3 page table entries
+			 *     describing 4K granular pages
+			 * !!!
+			 * TODO: Add support for other page table formats.
+			 */
+			uint64_t pte = ns_pte_list[pg];
+			if ((flags & UTM_W) && !NS_PTE_AP_U_RW(pte)) {
+				dprintf(CRITICAL, "%s: Making a writable mapping "
+						"to NS read-only page!\n", __func__);
+				goto err_out;
+			}
 
-		if (par & PAR_ATTR_FAULTED) {
-			dprintf(CRITICAL,
-				"failed %s user read V2P (v = 0x%016llx, par = 0x%016llx)\n",
-				(flags & UTM_NS_MEM) ? "NS" : "SEC",
-				vs, par);
-			err = ERR_NOT_VALID;
-			goto err_out;
-		}
+			physaddr = NS_PTE_PHYSADDR(pte);
 
-		if (par & PAR_ATTR_LPAE) {
-			inner = PAR_LDESC_ATTR_INNER(par);
-			outer = PAR_LDESC_ATTR_OUTER(par);
-			shareable = PAR_LDESC_ATTR_SHAREABLE(par);
-			physaddr = PAR_LDESC_ALIGNED_PA(par);
+			outer = mair_to_cb[NS_PTE_ATTR_OUTER(pte)];
+			if (outer & 0x4) {
+				dprintf(CRITICAL, "%s: Unknown outer cache attributes 0x%x\n",
+						__func__, outer);
+				goto err_out;
+			}
+
+			inner = mair_to_cb[NS_PTE_ATTR_INNER(pte)];
+			if (inner & 0x4) {
+				dprintf(CRITICAL, "%s: Unknown inner cache attributes 0x%x\n",
+						__func__, inner);
+				goto err_out;
+			}
+
+			shareable = NS_PTE_ATTR_SHAREABLE(pte);
 		} else {
-			inner = PAR_SDESC_ATTR_INNER(par);
-			outer = PAR_LDESC_ATTR_OUTER(par);
-			shareable = PAR_SDESC_ATTR_SHAREABLE(par);
-			physaddr = PAR_SDESC_ALIGNED_PA(par);
-		}
+			enter_critical_section();
+			arm_write_v2p(vs, type);
+			par = arm_read_par();
+			exit_critical_section();
 
+			if (par & PAR_ATTR_FAULTED) {
+				dprintf(CRITICAL,
+					"failed %s user read V2P (v = 0x%016llx, par = 0x%016llx)\n",
+					(flags & UTM_NS_MEM) ? "NS" : "SEC",
+					vs, par);
+				err = ERR_NOT_VALID;
+				goto err_out;
+			}
+
+			if (par & PAR_ATTR_LPAE) {
+				inner = PAR_LDESC_ATTR_INNER(par);
+				outer = PAR_LDESC_ATTR_OUTER(par);
+				shareable = PAR_LDESC_ATTR_SHAREABLE(par);
+				physaddr = PAR_LDESC_ALIGNED_PA(par);
+			} else {
+				inner = PAR_SDESC_ATTR_INNER(par);
+				outer = PAR_LDESC_ATTR_OUTER(par);
+				shareable = PAR_SDESC_ATTR_SHAREABLE(par);
+				physaddr = PAR_SDESC_ALIGNED_PA(par);
+			}
+		}
 #if !WITH_LPAE
 		/* without LPAE enabled, we can't map memory beyond 4GB */
 		if (physaddr >> 32) {

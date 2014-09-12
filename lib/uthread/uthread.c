@@ -585,7 +585,8 @@ err_out:
 }
 
 status_t uthread_grant_pages(uthread_t *ut_target, ext_vaddr_t vaddr_src,
-		size_t size, u_int flags, vaddr_t *vaddr_target, bool ns_src)
+		size_t size, u_int flags, vaddr_t *vaddr_target, bool ns_src,
+		uint64_t *ns_page_list)
 {
 	u_int align, npages;
 	paddr_t *pfn_list;
@@ -600,10 +601,20 @@ status_t uthread_grant_pages(uthread_t *ut_target, ext_vaddr_t vaddr_src,
 	vaddr_src = ROUNDDOWN(vaddr_src, PAGE_SIZE);
 
 	if (ns_src) {
+		if (!ns_page_list) {
+			err = ERR_INVALID_ARGS;
+			goto err_out;
+		}
+
 		align = UT_MAP_ALIGN_4KB;
 		flags |= UTM_NS_MEM;
 	} else {
 		uthread_map_t *mp_src;
+
+		/* ns_page_list should only be passes for NS src -> secure target
+		 * mappings
+		 */
+		ASSERT(!ns_page_list);
 
 		/* Only a vaddr_t sized vaddr_src is supported
 		 * for secure src -> secure target mappings.
@@ -641,7 +652,7 @@ status_t uthread_grant_pages(uthread_t *ut_target, ext_vaddr_t vaddr_src,
 
 	/* translate and map */
 	err = arch_uthread_translate_map(ut_target, vaddr_src, *vaddr_target,
-			pfn_list, npages, flags, ns_src);
+			pfn_list, npages, flags, ns_src, ns_page_list);
 
 	if (err != NO_ERROR)
 		goto err_free_pfn_list;
