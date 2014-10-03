@@ -545,9 +545,8 @@ void trusty_app_init()
 					 DEFAULT_PRIORITY, TRUSTY_APP_STACK_TOP,
 					 trusty_app->props.min_stack_size, trusty_app);
 		if (uthread == NULL) {
-			dprintf(CRITICAL, "allocate user thread failed\n");
 			/* TODO: do better than this */
-			halt();
+			panic("allocate user thread failed\n");
 		}
 		trusty_app->ut = uthread;
 
@@ -564,8 +563,7 @@ void trusty_app_init()
 
 		ret = alloc_address_map(trusty_app);
 		if (ret != NO_ERROR) {
-			dprintf(CRITICAL, "failed to load address map\n");
-			halt();
+			panic("failed to load address map\n");
 		}
 	}
 }
