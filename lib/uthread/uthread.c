@@ -359,7 +359,7 @@ void __NO_RETURN uthread_exit(int retcode)
 		free(ut);
 	} else {
 		TRACEF("WARNING: unexpected call on kernel thread %s!",
-				current_thread->name);
+				get_current_thread()->name);
 	}
 
 	thread_exit(retcode);
