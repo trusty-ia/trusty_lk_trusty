@@ -24,197 +24,75 @@
 #include <assert.h>
 #include <list.h>
 #include <string.h>
-#include <kernel/mutex.h>
 #include <lk/init.h>
 #include <lib/kmap.h>
-#include <lib/kmap/arch_kmap.h>
 
-static vaddr_t kmap_start;
-static vaddr_t kmap_end;
+#include <kernel/vm.h>
 
-/* List of all kernel mappings */
-static struct list_node kmap_list;
-
-/* Lock to protect operations on kernel page tables */
-static mutex_t kmap_lock;
-
-static vaddr_t kmap_find_va_space(size_t size, u_int flags, u_int align)
+static uint kmap_to_arch_mmu_flags(uint flags)
 {
-	vaddr_t start, end;
-	kmap_t *mp;
+	uint arch_flags = 0;
 
-	start = kmap_start;
-	end = start + size;
-
-	/* find first fit */
-	list_for_every_entry(&kmap_list, mp, kmap_t, node) {
-		if (end < mp->vaddr)
-			break;
-
-		start = MAX(start, ROUNDUP((mp->vaddr + mp->size), align));
-		end = start + size;
-
-		if (end > kmap_end)
-			return 0L;
-	}
-	return start;
-}
-
-static status_t kmap_alloc(vaddr_t vaddr, paddr_t *pfn_list, size_t size,
-		u_int flags, u_int align, kmap_t **mpp)
-{
-	kmap_t *mp, *mp_lst;
-	status_t err = NO_ERROR;
-	uint32_t npages;
-
-	ASSERT(!(size & (PAGE_SIZE_1M - 1)));
-
-	if (flags & KM_PHYS_CONTIG)
-		npages = 1;
+	if (flags & KM_IO)
+		arch_flags |= ARCH_MMU_FLAG_UNCACHED_DEVICE;
+	else if (flags & KM_UC)
+		arch_flags |= ARCH_MMU_FLAG_UNCACHED;
 	else
-		npages = (size / PAGE_SIZE_1M);
+		arch_flags |= ARCH_MMU_FLAG_CACHED;
 
-	mp = malloc(sizeof(kmap_t) + (npages * sizeof(mp->pfn_list[0])));
-	if (!mp) {
-		err = ERR_NO_MEMORY;
-		goto err_out;
-	}
+	if (flags & KM_NS_MEM)
+		arch_flags |= ARCH_MMU_FLAG_NS;
 
-	mp->vaddr = vaddr;
-	mp->size = size;
-	mp->flags = flags;
-	mp->align = align;
-	memcpy(mp->pfn_list, pfn_list, npages*sizeof(paddr_t));
-
-	list_for_every_entry(&kmap_list, mp_lst, kmap_t, node) {
-		if (mp_lst->vaddr > mp->vaddr) {
-			if((mp->vaddr + mp->size) > mp_lst->vaddr) {
-				err = ERR_INVALID_ARGS;
-				goto err_free_mp;
-			}
-			list_add_before(&mp_lst->node, &mp->node);
-			goto out;
+	if (flags & (KM_NONE | KM_X)) {
+		panic("%s: %x flags not supported\n", __func__, flags);
+	} else {
+		DEBUG_ASSERT(flags & (KM_R | KM_W));
+		if (flags & KM_R) {
+			arch_flags |= ARCH_MMU_FLAG_PERM_RO;
 		}
 	}
-
-	list_add_tail(&kmap_list, &mp->node);
-out:
-	if (mpp)
-		*mpp = mp;
-	return NO_ERROR;
-
-err_free_mp:
-	free(mp);
-err_out:
-	if (mpp)
-		*mpp = NULL;
-	return err;
-}
-
-static kmap_t *kmap_find(vaddr_t vaddr, size_t size)
-{
-	kmap_t *mp;
-
-	list_for_every_entry(&kmap_list, mp, kmap_t, node) {
-		if ((mp->vaddr <= vaddr) &&
-		    ((mp->vaddr + mp->size) >= (vaddr + size))) {
-			return mp;
-		}
-	}
-
-	return NULL;
-}
-
-/* caller ensures mp is in the mapping list */
-static void kmap_remove(kmap_t *mp)
-{
-	list_delete(&mp->node);
-	free(mp);
+	return arch_flags;
 }
 
 status_t kmap(paddr_t *pfn_list, size_t size, u_int flags,
 		u_int align, vaddr_t *vaddrp)
 {
-	kmap_t *mp = NULL;
-	status_t err;
-
-	if (!pfn_list || !vaddrp) {
-		err = ERR_INVALID_ARGS;
-		goto done;
-	}
-
-	if((size & (PAGE_SIZE_1M - 1))) {
-		err = ERR_NOT_VALID;
-		goto done;
-	}
-
-	mutex_acquire(&kmap_lock);
-
-	*vaddrp = kmap_find_va_space(size, flags, align);
-
-	if (!(*vaddrp)) {
-		err = ERR_NO_MEMORY;
-		goto unlock;
-	}
-
-	err = kmap_alloc(*vaddrp, pfn_list, size, flags, align, &mp);
-	if(err)
-		goto unlock;
-
-	err = arch_kmap(mp);
-
-	if (err)
-		kmap_remove(mp);
-unlock:
-	mutex_release(&kmap_lock);
-done:
-	return err;
+	panic("%s: implement me\n", __func__);
+	return ERR_NOT_SUPPORTED;
 }
 
 status_t kunmap(vaddr_t vaddr, size_t size)
 {
-	kmap_t *mp;
-	status_t err;
-
-	if (!vaddr) {
-		err = ERR_INVALID_ARGS;
-		goto done;
-	}
-
-	mutex_acquire(&kmap_lock);
-
-	mp = kmap_find(vaddr, size);
-	if(!mp) {
-		err = ERR_NOT_FOUND;
-		goto unlock;
-	}
-
-	err = arch_kunmap(mp);
-	if (err)
-		goto unlock;
-
-	kmap_remove(mp);
-unlock:
-	mutex_release(&kmap_lock);
-done:
-	return err;
+	return vmm_free_region(vmm_get_kernel_aspace(), vaddr);
 }
 
-status_t kmap_set_valloc_range(vaddr_t start, vaddr_t end)
+
+status_t kmap_contig(paddr_t paddr, size_t size, u_int flags,
+		u_int align, vaddr_t *vaddrp)
 {
-	if (start > end)
+	u_int offset;
+	status_t err;
+	void *vptr = NULL;
+
+	if (!paddr) {
+		if (vaddrp) {
+			*vaddrp = (vaddr_t) NULL;
+		}
 		return ERR_INVALID_ARGS;
+	}
 
-	kmap_start = start;
-	kmap_end = end;
+	offset = paddr & (align - 1);
+	paddr  = ROUNDDOWN(paddr, align);
+	size   = ROUNDUP((size + offset), align);
 
+	err = vmm_alloc_physical(vmm_get_kernel_aspace(), "kmap",
+				 size, &vptr, paddr,  0,
+				 kmap_to_arch_mmu_flags(flags));
+	if (err)
+		return err;
+
+	if (vaddrp) {
+		*vaddrp = (vaddr_t)vptr +  offset;
+	}
 	return NO_ERROR;
 }
-
-static void kmap_init(uint level)
-{
-	mutex_init(&kmap_lock);
-	list_initialize(&kmap_list);
-}
-
-LK_INIT_HOOK(libkmap, kmap_init, LK_INIT_LEVEL_ARCH_EARLY);

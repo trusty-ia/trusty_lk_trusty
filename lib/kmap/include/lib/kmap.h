@@ -24,8 +24,8 @@
 #ifndef __LIB_KMAP_H
 #define __LIB_KMAP_H
 
-#ifndef WITH_MMU_RELOC
-#error "libkmap needs MMU_RELOC enabled"
+#ifndef WITH_KERNEL_VM
+#error "libkmap needs KERNEL_VM enabled"
 #endif
 
 #include <compiler.h>
@@ -60,9 +60,6 @@ enum
 	KM_UC		= 1 << 7,	/* Bypass CPU cache(s) */
 };
 
-/* Initialize kmap with an available vaddr range */
-status_t kmap_set_valloc_range(vaddr_t start, vaddr_t end);
-
 /* Map in a list of physical pages into a contiguous virtual address range */
 status_t kmap(paddr_t *pfn_list, size_t size, u_int flags,
 		u_int align, vaddr_t *vaddrp);
@@ -70,30 +67,8 @@ status_t kmap(paddr_t *pfn_list, size_t size, u_int flags,
 /* Unmap a previously made mapping */
 status_t kunmap(vaddr_t vaddr, size_t size);
 
-/* Shortcut for mapping a physically contiguous range of pages */
-static inline
 status_t kmap_contig(paddr_t paddr, size_t size, u_int flags,
-		u_int align, vaddr_t *vaddrp)
-{
-	u_int offset;
-	status_t err;
+		u_int align, vaddr_t *vaddrp);
 
-	if (!paddr) {
-		*vaddrp = paddr;
-		return ERR_INVALID_ARGS;
-	}
-
-	offset = paddr & (PAGE_SIZE_1M - 1);
-	paddr = ROUNDDOWN(paddr, PAGE_SIZE_1M);
-	size = ROUNDUP((size + offset), PAGE_SIZE_1M);
-	flags = flags | KM_PHYS_CONTIG;
-
-	err = kmap(&paddr, size, flags, align, vaddrp);
-
-	if (!err)
-		*vaddrp += offset;
-
-	return err;
-}
 
 #endif /* __LIB_KMAP_H */
