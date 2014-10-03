@@ -243,7 +243,7 @@ static void arm_write_v2p(ext_vaddr_t vaddr, v2p_t v2p)
 	}
 }
 
-static uint64_t arm_read_par(void)
+static uint64_t arm_read_par64(void)
 {
 	uint32_t lower, higher;
 
@@ -357,7 +357,7 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 		} else {
 			enter_critical_section();
 			arm_write_v2p(vs, type);
-			par = arm_read_par();
+			par = arm_read_par64();
 			exit_critical_section();
 
 			if (par & PAR_ATTR_FAULTED) {
