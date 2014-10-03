@@ -137,8 +137,7 @@ static void sm_init(uint level)
 			(thread_start_routine)sm_wait_for_smcall,
 			NULL, LOWEST_PRIORITY + 1, DEFAULT_STACK_SIZE);
 	if (!nsthread) {
-		dprintf(CRITICAL, "failed to create NS switcher thread!\n");
-		halt();
+		panic("failed to create NS switcher thread!\n");
 	}
 }
 
