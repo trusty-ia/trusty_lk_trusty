@@ -38,7 +38,7 @@
 
 long sys_undefined(int num)
 {
-	dprintf(SPEW, "%p invalid syscall %d requested\n", current_thread, num);
+	dprintf(SPEW, "%p invalid syscall %d requested\n", get_current_thread(), num);
 	return ERR_NOT_SUPPORTED;
 }
 
