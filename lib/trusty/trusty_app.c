@@ -558,7 +558,13 @@ void trusty_app_init()
 #endif
 
 #if WITH_LIB_OTE
-		event_init(&trusty_app->ote_event, false, EVENT_FLAG_AUTOUNSIGNAL);
+		ret = ote_client_init(&trusty_app->ote_client);
+		if (ret != NO_ERROR)
+			panic("failed to initialize ote client (%d)\n", ret);
+
+		ret = ote_server_init(&trusty_app->ote_server);
+		if (ret != NO_ERROR)
+			panic("failed to initialize ote server (%d)\n", ret);
 #endif
 
 		ret = alloc_address_map(trusty_app);
