@@ -26,6 +26,8 @@
 #include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
 
+#include <kernel/vm.h>
+
 #if !WITH_LIB_SM_MONITOR
 
 #define TOS_COMPLETION		1
@@ -311,13 +313,35 @@ FUNCTION(platform_reset)
 
 #endif
 
-	/* r0 is memsize passed in by the bootloader */
-	ldr	r4, =_start	/* r4 = _start vaddr */
-	add	r4, r4, r0	/* r4 = _start + size */
+	/* patch mmu_initial_mappings table */
+	ldr	r5, =mmu_initial_mappings
+	add	r5, r5, ip	/* r5 = _mmu_initial_mappings paddr */
 
-	ldr	r5, =_heap_end	/* r5 = _heap_end vaddr */
-	add	r5, r5, ip	/* r5 = _heap_end paddr */
-	str	r4, [r5]
+.Lnext_entry:
+	/* if size == 0, end of list */
+	ldr	r4, [r5, #__MMU_INITIAL_MAPPING_SIZE_OFFSET]
+	cmp	r4, #0
+	beq	.Lall_done
+
+	ldr	r4, [r5, #__MMU_INITIAL_MAPPING_FLAGS_OFFSET]
+	tst	r4, #MMU_INITIAL_MAPPING_FLAG_DYNAMIC
+	addeq	r5, #__MMU_INITIAL_MAPPING_SIZE
+	beq	.Lnext_entry
+
+	/* patching dynamic entry: r5 - points to entry to patch */
+	/* r0 is memsize passed in by the bootloader */
+
+	/* update size field of mmu_initial_mappings struct */
+	str	r0, [r5, #__MMU_INITIAL_MAPPING_SIZE_OFFSET]
+
+	/* calculate phys mem base */
+	ldr	r4, =_start	/* r4 = _start vaddr */
+	add     r4, r4, ip      /* r4 = _start paddr */
+
+	/* update phys field of mmu_initial_mappings struct */
+	str	r4, [r5, #__MMU_INITIAL_MAPPING_PHYS_OFFSET]
+
+.Lall_done:
 
 	/* Save platform boot args.
 	 * r1 = paddr of argument block
