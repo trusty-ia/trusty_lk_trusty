@@ -35,7 +35,11 @@
 #include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
 #include <lk/init.h>
+#include <string.h>
 #include <arch/ops.h>
+#if WITH_LIB_VERSION
+#include <version.h>
+#endif
 
 #define LOCAL_TRACE	1
 
@@ -133,6 +137,22 @@ static long smc_cpu_resume(smc32_args_t *args)
 }
 #endif
 
+#if WITH_LIB_VERSION
+static long smc_get_version_str(smc32_args_t *args)
+{
+	int32_t index = args->params[0];
+	size_t version_len = strlen(lk_version);
+
+	if (index == -1)
+		return version_len;
+
+	if ((size_t)index >= version_len)
+		return SM_ERR_INVALID_PARAMETERS;
+
+	return lk_version[index];
+}
+#endif
+
 smc32_handler_t sm_fastcall_function_table[] = {
 #if WITH_LIB_SM_MONITOR
 	[SMC_FUNCTION(SMC_FC_GO_NONSECURE)] = smc_go_nonsecure,
@@ -144,6 +164,9 @@ smc32_handler_t sm_fastcall_function_table[] = {
 	[SMC_FUNCTION(SMC_FC_FIQ_ENTER)] = smc_fiq_enter,
 	[SMC_FUNCTION(SMC_FC_CPU_SUSPEND)] = smc_cpu_suspend,
 	[SMC_FUNCTION(SMC_FC_CPU_RESUME)] = smc_cpu_resume,
+#endif
+#if WITH_LIB_VERSION
+	[SMC_FUNCTION(SMC_FC_GET_VERSION_STR)] = smc_get_version_str,
 #endif
 };
 
