@@ -32,6 +32,10 @@
 #include <kernel/mutex.h>
 #include <arch/uthread.h>
 
+#if WITH_KERNEL_VM
+#include <kernel/vm.h>
+#endif
+
 typedef uintptr_t user_addr_t;
 
 typedef struct uthread_map
