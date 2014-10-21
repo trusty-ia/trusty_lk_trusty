@@ -84,6 +84,13 @@ static void sm_secondary_init(uint level)
 	const size_t stack_size = 4096;
 	void *mon_stack;
 
+	/* We need to have a thread context in order to use heap_alloc
+	 * On primary CPU it is bootstrap. Set it to nsthread on
+	 * secondary CPU.
+	 */
+	if (!get_current_thread() && nsthread)
+		set_current_thread(nsthread);
+
 	mon_stack = heap_alloc(stack_size, 8);
 	if (!mon_stack)
 		dprintf(CRITICAL, "failed to allocate monitor mode stack!\n");
