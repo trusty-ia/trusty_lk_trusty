@@ -409,11 +409,23 @@ FUNCTION(sm_sched_nonsecure)
 	mrrc	p15, 2, r2, r3, c14	/* r2,r3 = CNTP_CVAL */
 	push	{r1, r2, r3, lr}
 
+#if !ARM_ISA_ARMV7M
+	/* save current thread */
+	mrc	 p15, 0, r1, c13, c0, 4  /* r1 = TPIDRPRW */
+	push	{r1}
+#endif
+
 	/* Context switch to nonsecure */
 	ldr	r2, =mon_s_sp
 	ldr	r3, =mon_ns_sp
 	ldr	r3, [r3]
 	bl	sm_context_switch
+
+#if !ARM_ISA_ARMV7M
+	/* restore current thread */
+	pop	{r1}
+	mcr	p15, 0, r1, c13, c0, 4  /* TPIDRPRW = r1 */
+#endif
 
 	pop	{r1, r2, r3, lr}
 	mcrr	p15, 2, r2, r3, c14	/* CNTP_CVAL = r2,r3 (saved CNTP_CVAL) */
