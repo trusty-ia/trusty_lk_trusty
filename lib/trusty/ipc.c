@@ -660,7 +660,7 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 	if ((uint)ret >= sizeof(tmp_path))
 		return (long) ERR_INVALID_ARGS;
 
-	ret = ipc_port_connect(tmp_path, MSECS_TO_LK_TIME(timeout_msecs),
+	ret = ipc_port_connect(tmp_path, timeout_msecs,
 			       &chandle);
 	if (ret != NO_ERROR)
 		return (long) ret;

@@ -260,7 +260,7 @@ long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
 	DEBUG_ASSERT(handle);
 
 	ret = handle_wait(handle, &tmp_event.event,
-		          MSECS_TO_LK_TIME(timeout_msecs));
+		          timeout_msecs);
 	if (ret <= 0) {
 		/* en error or no events (timeout) */
 		goto out;
@@ -303,7 +303,7 @@ long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
 	 * extra ref taken.
 	 */
 	ret = handle_list_wait(&ctx->handle_list, &handle, &tmp_event.event,
-	                       MSECS_TO_LK_TIME(timeout_msecs));
+			       timeout_msecs);
 	if (ret <= 0) {
 		/* an error or no events (timeout) */
 		goto out;
