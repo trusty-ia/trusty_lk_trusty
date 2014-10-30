@@ -318,7 +318,7 @@ long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
 	handle_decref(handle);
 
 	/* there should be a handle id */
-	DEBUG_ASSERT(tmp_event.handle >= 0);
+	DEBUG_ASSERT(tmp_event.handle < IPC_MAX_HANDLES);
 
 	status_t status = copy_to_user(user_event, &tmp_event, sizeof(tmp_event));
 	if (status) {
