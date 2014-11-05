@@ -102,8 +102,8 @@ typedef struct ipc_chan {
 int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr);
 
 /* client requests a connection to a port */
-int ipc_port_connect(const char *path, lk_time_t timeout,
-		     handle_t **chandle_ptr);
+int ipc_port_connect(const char *path, size_t max_path,
+                     lk_time_t timeout,  handle_t **chandle_ptr);
 
 bool ipc_is_channel(handle_t *handle);
 bool ipc_is_port(handle_t *handle);

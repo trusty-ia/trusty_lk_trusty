@@ -517,14 +517,20 @@ static ipc_port_t *wait_for_port_locked(const char * path, lk_time_t timeout)
  * Client requests a connection to a port. It can be called in context
  * of user task as well as vdev RX thread.
  */
-int ipc_port_connect(const char *path, lk_time_t timeout,
-                     handle_t **chandle_ptr)
+int ipc_port_connect(const char *path, size_t max_path,
+                     lk_time_t timeout, handle_t **chandle_ptr)
 {
 	ipc_port_t *port;
 	ipc_chan_t *client = NULL;
 	ipc_chan_t *server = NULL;
 	int ret;
 	uint32_t client_event = 0;
+
+	if (strnlen(path, max_path) >= max_path) {
+		/* unterminated string */
+		return ERR_INVALID_ARGS;
+	}
+	/* After this point path is zero terminated */
 
 	LTRACEF("Connecting to '%s'\n", path);
 
@@ -660,8 +666,8 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 	if ((uint)ret >= sizeof(tmp_path))
 		return (long) ERR_INVALID_ARGS;
 
-	ret = ipc_port_connect(tmp_path, timeout_msecs,
-			       &chandle);
+	ret = ipc_port_connect(tmp_path, sizeof(tmp_path),
+                               timeout_msecs, &chandle);
 	if (ret != NO_ERROR)
 		return (long) ret;
 
