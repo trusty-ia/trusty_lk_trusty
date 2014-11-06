@@ -75,8 +75,8 @@ static char *trusty_app_image_start;
 static char *trusty_app_image_end;
 static u_int trusty_app_image_size;
 
-extern u_int __trusty_app_start;
-extern u_int __trusty_app_end;
+extern intptr_t __trusty_app_start;
+extern intptr_t __trusty_app_end;
 
 #define PRINT_TRUSTY_APP_UUID(tid,u)					\
 	dprintf(SPEW,							\
@@ -93,7 +93,7 @@ extern u_int __trusty_app_end;
 		(u)->clock_seq_and_node[6],				\
 		(u)->clock_seq_and_node[7]);
 
-static void load_app_config_options(u_int trusty_app_image_addr,
+static void load_app_config_options(intptr_t trusty_app_image_addr,
 		trusty_app_t *trusty_app, Elf32_Shdr *shdr)
 {
 	char  *manifest_data;
@@ -430,8 +430,8 @@ static void trusty_app_bootloader(void)
 			break;
 		}
 
-		shdr = (Elf32_Shdr *) ((u_int)ehdr + ehdr->e_shoff);
-		shstbl = (char *)((u_int)ehdr + shdr[ehdr->e_shstrndx].sh_offset);
+		shdr = (Elf32_Shdr *) ((intptr_t)ehdr + ehdr->e_shoff);
+		shstbl = (char *)((intptr_t)ehdr + shdr[ehdr->e_shstrndx].sh_offset);
 
 		trusty_app_max_extent = 0;
 		bss_shdr = bss_pad_shdr = manifest_shdr = NULL;
@@ -474,7 +474,7 @@ static void trusty_app_bootloader(void)
 		ASSERT((bss_shdr->sh_offset + bss_shdr->sh_size) <= trusty_app_max_extent);
 		memset((uint8_t *)trusty_app_image_addr + bss_shdr->sh_offset, 0, bss_shdr->sh_size);
 
-		load_app_config_options((u_int)trusty_app_image_addr, trusty_app, manifest_shdr);
+		load_app_config_options((intptr_t)trusty_app_image_addr, trusty_app, manifest_shdr);
 		trusty_app->elf_hdr = ehdr;
 
 		/* align next trusty_app start */
