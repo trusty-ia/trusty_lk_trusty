@@ -126,7 +126,7 @@ static void sm_init(uint level)
 	if (sm_platform_boot_args[0] && sm_platform_boot_args[1]) {
 		err = kmap_contig(sm_platform_boot_args[0],
 				sm_platform_boot_args[1],
-				KM_R | KM_NS_MEM,
+				KM_W | KM_NS_MEM,
 				PAGE_SIZE_1M,
 				(vaddr_t *)&boot_args);
 
