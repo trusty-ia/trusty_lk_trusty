@@ -25,6 +25,8 @@
 
 #if ARCH_ARM
 #include <arch/arm/elf_machdep.h>
+#elif ARCH_ARM64
+#include <arch/arm/elf_machdep.h>
 #else
 #error "Unknown architecture"
 #endif
