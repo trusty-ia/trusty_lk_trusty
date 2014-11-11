@@ -176,14 +176,17 @@ mon_fiq_from_secure:
 	sub	lr, lr, #4
 	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
 	push	{r0-r4, ip}
+	sub	sp, sp, #(SMC_NUM_ARGS * 4)
 	mov	r0, #SM_ERR_INTERRUPTED
 1:
+	mov	r1, sp
 	bl	go_nonsecure
-	ldr	r0, [r0]	/* r0 = args->smc_nr */
+	ldr	r0, [sp]	/* r0 = args->smc_nr */
 	ldr	r1, =SMC_SC_RESTART_LAST
 	cmp	r0, r1
 	movne	r0, #SM_ERR_INTERLEAVED_SMC
 	bne	1b
+	add	sp, sp, #(SMC_NUM_ARGS * 4)
 	pop	{r0-r4, ip}
 	rfefd	sp!
 
@@ -414,6 +417,7 @@ FUNCTION(smc_go_nonsecure)
 	bxne	lr
 
 	/* Save return value from args->params[0] */
+	ldr	r1, [r0, #8]
 	ldr	r0, [r0, #4]
 
 go_nonsecure:
@@ -425,25 +429,34 @@ FUNCTION(sm_sched_nonsecure)
 #endif
 	/* Save secure only state, in case we return on a different cpu */
 #if WITH_LIB_UTHREAD
-	mrc	p15, 0, r1, c13, c0, 1	/* r1 = CONTEXTIDR */
-	mrrc	p15, 0, r2, r3, c2	/* r2,r3 = TTBR0 */
-	push	{r1, r2, r3, lr}
+	mrc	p15, 0, r2, c13, c0, 1	/* r2 = CONTEXTIDR */
+	mrrc	p15, 0, r3, ip, c2	/* r3,ip = TTBR0 */
+	push	{r2, r3, ip, lr}
 #endif
-	mrc	p15, 0, r1, c14, c2, 1	/* r1 = CNTP_CTL */
-	mrrc	p15, 2, r2, r3, c14	/* r2,r3 = CNTP_CVAL */
-	push	{r1, r2, r3, lr}
+	mrc	p15, 0, r2, c14, c2, 1	/* r2 = CNTP_CTL */
+	mrrc	p15, 2, r3, ip, c14	/* r3,ip = CNTP_CVAL */
+	push	{r2, r3, ip, lr}
 
 #if !ARM_ISA_ARMV7M
 	/* save current thread */
-	mrc	 p15, 0, r1, c13, c0, 4  /* r1 = TPIDRPRW */
-	push	{r1}
+	mrc	 p15, 0, r2, c13, c0, 4  /* r2 = TPIDRPRW */
+	push	{r2}
 #endif
+	push	{r1}
 
 	/* Context switch to nonsecure */
 	ldr	r2, =mon_s_sp
 	ldr	r3, =mon_ns_sp
 	ldr	r3, [r3]
 	bl	sm_context_switch
+
+	pop	{r1}
+
+	/* copy smc32_args_t */
+	ldmia	r0!, {r2, r3}
+	stmia	r1!, {r2, r3}
+	ldmia	r0!, {r2, r3}
+	stmia	r1!, {r2, r3}
 
 #if !ARM_ISA_ARMV7M
 	/* restore current thread */
@@ -469,8 +482,9 @@ FUNCTION(sm_sched_nonsecure)
 
 #if WITH_LIB_SM_MONITOR
 
-/* sm_sched_nonsecure(uint32_t retval) */
+/* sm_sched_nonsecure(uint32_t retval, smc32_args_t *args) */
 FUNCTION(sm_sched_nonsecure)
+	mov	r2, r1
 	mov	r1, r0
 	ldr	r0, =SMC_FC_GO_NONSECURE
 	smc	#0

@@ -44,7 +44,7 @@ typedef struct smc32_entity {
 long sm_sched_secure(smc32_args_t *args);
 
 /* Schedule Non-secure OS */
-smc32_args_t *sm_sched_nonsecure(long retval);
+void sm_sched_nonsecure(long retval, smc32_args_t *args);
 
 /* Handle an interrupt */
 enum handler_return sm_handle_irq(void);

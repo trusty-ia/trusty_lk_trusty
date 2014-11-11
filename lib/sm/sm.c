@@ -48,7 +48,6 @@ extern smc32_handler_t sm_stdcall_table[];
 static void sm_wait_for_smcall(void)
 {
 	long ret = 0;
-	smc32_args_t *ns_args;
 	smc32_args_t args;
 
 	while (true) {
@@ -56,10 +55,9 @@ static void sm_wait_for_smcall(void)
 
 		thread_yield();
 		arch_disable_fiqs();
-		ns_args = sm_sched_nonsecure(ret);
+		sm_sched_nonsecure(ret, &args);
 
 		/* Pull args out before enabling interrupts */
-		args = *ns_args;
 		arch_enable_fiqs();
 		exit_critical_section();
 
@@ -153,14 +151,14 @@ LK_INIT_HOOK(libsm, sm_init, LK_INIT_LEVEL_PLATFORM - 1);
 enum handler_return sm_handle_irq(void)
 {
 	bool fiqs_disabled;
-	smc32_args_t *args;
+	smc32_args_t args;
 
 	fiqs_disabled = arch_fiqs_disabled();
 	if (!fiqs_disabled)
 		arch_disable_fiqs();
-	args = sm_sched_nonsecure(SM_ERR_INTERRUPTED);
-	while (args->smc_nr != SMC_SC_RESTART_LAST)
-		args = sm_sched_nonsecure(SM_ERR_INTERLEAVED_SMC);
+	sm_sched_nonsecure(SM_ERR_INTERRUPTED, &args);
+	while (args.smc_nr != SMC_SC_RESTART_LAST)
+		sm_sched_nonsecure(SM_ERR_INTERLEAVED_SMC, &args);
 	if (!fiqs_disabled)
 		arch_enable_fiqs();
 
