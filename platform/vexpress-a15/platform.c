@@ -23,35 +23,98 @@
 #include <arch.h>
 #include <arch/arm.h>
 #include <arch/arm/mmu.h>
-#include <arch/arm/ops.h>
 #include <err.h>
 #include <debug.h>
 #include <dev/interrupt/arm_gic.h>
 #include <dev/timer/arm_generic.h>
+#include <kernel/vm.h>
 #include <lk/init.h>
 #include <platform.h>
 #include <platform/gic.h>
 #include <platform/interrupts.h>
 #include <platform/vexpress-a15.h>
+#include <string.h>
+#include <reg.h>
 #include "platform_p.h"
 
 #if WITH_LIB_KMAP
 #include <lib/kmap.h>
 #endif
 
+/* initial memory mappings. parsed by start.S */
+struct mmu_initial_mapping mmu_initial_mappings[] = {
+	/* Mark next entry as dynamic as it might be updated
+	   by platform_reset code to specify actual size and
+	   location of RAM to use */
+	{ .phys = MEMBASE + KERNEL_LOAD_OFFSET,
+	  .virt = KERNEL_BASE + KERNEL_LOAD_OFFSET,
+	  .size = MEMSIZE,
+	  .flags = MMU_INITIAL_MAPPING_FLAG_DYNAMIC,
+	  .name = "ram" },
+
+	{ .phys = REGISTER_BANK_0_PADDR,
+	  .virt = REGISTER_BANK_0_VADDR,
+	  .size = 0x00100000,
+	  .flags = MMU_INITIAL_MAPPING_FLAG_DEVICE,
+	  .name = "bank-0" },
+
+	{ .phys = REGISTER_BANK_1_PADDR,
+	  .virt = REGISTER_BANK_1_VADDR,
+	  .size = 0x00100000,
+	  .flags = MMU_INITIAL_MAPPING_FLAG_DEVICE,
+	  .name = "bank-1" },
+
+	{ .phys = REGISTER_BANK_2_PADDR,
+	  .virt = REGISTER_BANK_2_VADDR,
+	  .size = 0x00100000,
+	  .flags = MMU_INITIAL_MAPPING_FLAG_DEVICE,
+	  .name = "bank-2" },
+
+	/* null entry to terminate the list */
+	{ 0 }
+};
+
+static pmm_arena_t ram_arena = {
+    .name  = "ram",
+    .base  =  MEMBASE + KERNEL_LOAD_OFFSET,
+    .size  =  MEMSIZE,
+    .flags =  PMM_ARENA_FLAG_KMAP
+};
+
+static uint32_t get_cpuid(void)
+{
+	u_int cpuid;
+
+	__asm__ volatile(
+		"mrc p15, 0, %0, c0, c0, 5 @ read MPIDR\n"
+		: "=r" (cpuid));
+
+	return cpuid & 0xF;
+}
+
 void platform_init_mmu_mappings(void)
 {
-#if WITH_LIB_KMAP
-	kmap_set_valloc_range(0x60000000, 0x70000000);
-#endif
-#if WITH_MMU_RELOC
-	arm_mmu_map_section(REGISTER_BANK_0_PADDR, REGISTER_BANK_0_VADDR,
-		MMU_MEMORY_L1_TYPE_DEVICE_SHARED | MMU_MEMORY_L1_AP_P_RW_U_NA);
-	arm_mmu_map_section(REGISTER_BANK_1_PADDR, REGISTER_BANK_1_VADDR,
-		MMU_MEMORY_L1_TYPE_DEVICE_SHARED | MMU_MEMORY_L1_AP_P_RW_U_NA);
-	arm_mmu_map_section(REGISTER_BANK_2_PADDR, REGISTER_BANK_2_VADDR,
-		MMU_MEMORY_L1_TYPE_DEVICE_SHARED | MMU_MEMORY_L1_AP_P_RW_U_NA);
-#endif
+	if (get_cpuid())
+		return;
+
+	/* go through mmu_initial_mapping to find dynamic entry
+	 * matching ram_arena (by name) and adjust it.
+	 */
+	struct mmu_initial_mapping *m = mmu_initial_mappings;
+	for (int i = 0; i < countof(mmu_initial_mappings); i++, m++) {
+		if (!(m->flags & MMU_INITIAL_MAPPING_FLAG_DYNAMIC))
+			continue;
+
+		if (strcmp(m->name, ram_arena.name) == 0) {
+			/* update ram_arena */
+			ram_arena.base = m->phys;
+			ram_arena.size = m->size;
+			ram_arena.flags = PMM_ARENA_FLAG_KMAP;
+
+			break;
+		}
+	}
+	pmm_add_arena(&ram_arena);
 }
 
 void platform_early_init(void)
