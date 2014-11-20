@@ -5,12 +5,13 @@ MODULE := $(LOCAL_DIR)
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/include
 
-MODULE_ARM_OVERRIDE_SRCS += \
-	$(LOCAL_DIR)/entry.S \
+MODULE_SRCS += \
 	$(LOCAL_DIR)/sm.c \
 	$(LOCAL_DIR)/smcall.c \
 
 MODULE_DEPS += \
 	lib/kmap \
+
+include $(LOCAL_DIR)/arch/$(ARCH)/rules.mk
 
 include make/module.mk
