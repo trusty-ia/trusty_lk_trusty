@@ -315,7 +315,7 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 		goto err_free_ut_maps;
 
 	/* store user thread struct into TLS slot 0 */
-	ut->thread->tls[TLS_ENTRY_UTHREAD] = (uint32_t) ut;
+	ut->thread->tls[TLS_ENTRY_UTHREAD] = (uintptr_t) ut;
 
 	/* Put it in global uthread list */
 	enter_critical_section();
