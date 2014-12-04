@@ -36,7 +36,7 @@
 void sm_set_mon_stack(void *stack);
 
 extern unsigned long monitor_vector_table;
-extern long sm_platform_boot_args[2];
+extern ulong lk_boot_args[4];
 
 static void *boot_args;
 static int boot_args_refcnt;
@@ -121,9 +121,9 @@ static void sm_init(uint level)
 	mutex_acquire(&boot_args_lock);
 
 	/* Map the boot arguments if supplied by the bootloader */
-	if (sm_platform_boot_args[0] && sm_platform_boot_args[1]) {
-		err = kmap_contig(sm_platform_boot_args[0],
-				sm_platform_boot_args[1],
+	if (lk_boot_args[1] && lk_boot_args[2]) {
+		err = kmap_contig(lk_boot_args[1],
+				lk_boot_args[2],
 				KM_W | KM_NS_MEM,
 				PAGE_SIZE_1M,
 				(vaddr_t *)&boot_args);
@@ -181,7 +181,7 @@ status_t sm_get_boot_args(void **boot_argsp, size_t *args_sizep)
 
 	boot_args_refcnt++;
 	*boot_argsp = boot_args;
-	*args_sizep = sm_platform_boot_args[1];
+	*args_sizep = lk_boot_args[2];
 unlock:
 	mutex_release(&boot_args_lock);
 	return err;
@@ -199,7 +199,7 @@ void sm_put_boot_args(void)
 
 	boot_args_refcnt--;
 	if (boot_args_refcnt == 0) {
-		kunmap((vaddr_t)boot_args, sm_platform_boot_args[1]);
+		kunmap((vaddr_t)boot_args, lk_boot_args[2]);
 		boot_args = NULL;
 		thread_resume(nsthread);
 	}
