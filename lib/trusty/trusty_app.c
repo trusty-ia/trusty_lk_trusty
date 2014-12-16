@@ -587,6 +587,19 @@ trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid)
 	return NULL;
 }
 
+/* rather export trusty_app_list?  */
+void trusty_app_forall(void (*fn)(trusty_app_t *ta, void *data), void *data)
+{
+	u_int i;
+	trusty_app_t *ta;
+
+	if (fn == NULL)
+		return;
+
+	for (i = 0, ta = trusty_app_list; i < trusty_app_count; i++, ta++)
+		fn(ta, data);
+}
+
 static void start_apps(uint level)
 {
 	trusty_app_t *trusty_app;
