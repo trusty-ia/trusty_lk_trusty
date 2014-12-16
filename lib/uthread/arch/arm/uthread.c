@@ -358,10 +358,10 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 
 			shareable = NS_PTE_ATTR_SHAREABLE(pte);
 		} else {
-			enter_critical_section();
+			arch_disable_ints();
 			arm_write_v2p(vs, type);
 			par = arm_read_par64();
-			exit_critical_section();
+			arch_enable_ints();
 
 			if (par & PAR_ATTR_FAULTED) {
 				dprintf(CRITICAL,

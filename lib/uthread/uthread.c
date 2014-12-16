@@ -38,7 +38,7 @@ static struct list_node uthread_list;
 
 /* Monotonically increasing thread id for now */
 static uint32_t next_utid;
-
+static spin_lock_t uthread_lock;
 
 static inline void mmap_lock(uthread_t *ut)
 {
@@ -56,9 +56,11 @@ static inline void mmap_unlock(uthread_t *ut)
 /* TODO: implement a utid hashmap */
 static uint32_t uthread_alloc_utid(void)
 {
-	enter_critical_section();
+	spin_lock_saved_state_t state;
+
+	spin_lock_save(&uthread_lock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
 	next_utid++;
-	exit_critical_section();
+	spin_unlock_restore(&uthread_lock, state, SPIN_LOCK_FLAG_INTERRUPTS);
 
 	return next_utid;
 }
@@ -275,6 +277,7 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 	uthread_t *ut = NULL;
 	status_t err;
 	vaddr_t stack_bot;
+	spin_lock_saved_state_t state;
 
 	ut = (uthread_t *)calloc(1, sizeof(uthread_t));
 	if (!ut)
@@ -319,9 +322,9 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 	ut->thread->tls[TLS_ENTRY_UTHREAD] = (uintptr_t) ut;
 
 	/* Put it in global uthread list */
-	enter_critical_section();
+	spin_lock_save(&uthread_lock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
 	list_add_head(&uthread_list, &ut->uthread_list_node);
-	exit_critical_section();
+	spin_unlock_restore(&uthread_lock, state, SPIN_LOCK_FLAG_INTERRUPTS);
 
 	return ut;
 
