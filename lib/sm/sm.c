@@ -23,19 +23,33 @@
 
 #include <err.h>
 #include <trace.h>
-#include <kernel/vm.h>
+#include <kernel/event.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
+#include <kernel/vm.h>
 #include <lib/heap.h>
 #include <lib/sm.h>
 #include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
 #include <lk/init.h>
+#include <string.h>
 #include <sys/types.h>
 
 #define LOCAL_TRACE	0
 
-void sm_set_mon_stack(void *stack);
+#define LTRACEF_LEVEL(level, x...) do { if (LOCAL_TRACE >= level) { TRACEF(x); } } while (0)
+
+struct sm_std_call_state {
+	spin_lock_t lock;
+	event_t event;
+	smc32_args_t args;
+	long ret;
+	bool done;
+	int active_cpu; /* cpu that expects stdcall result */
+	int initial_cpu; /* Debug info: cpu that started stdcall */
+	int last_cpu; /* Debug info: most recent cpu expecting stdcall result */
+	int restart_count;
+};
 
 extern unsigned long monitor_vector_table;
 extern ulong lk_boot_args[4];
@@ -43,10 +57,22 @@ extern ulong lk_boot_args[4];
 static void *boot_args;
 static int boot_args_refcnt;
 static mutex_t boot_args_lock = MUTEX_INITIAL_VALUE(boot_args_lock);
-static thread_t *nsthread;
 static uint32_t sm_api_version;
 static bool sm_api_version_locked;
 static spin_lock_t sm_api_version_lock;
+
+static event_t nsirqevent[SMP_MAX_CPUS];
+static thread_t *nsirqthreads[SMP_MAX_CPUS];
+static thread_t *nsidlethreads[SMP_MAX_CPUS];
+static thread_t *stdcallthread;
+static bool ns_threads_started;
+static bool irq_thread_ready[SMP_MAX_CPUS];
+struct sm_std_call_state stdcallstate = {
+	.event = EVENT_INITIAL_VALUE(stdcallstate.event, 0, 0),
+	.active_cpu = -1,
+	.initial_cpu = -1,
+	.last_cpu = -1,
+};
 
 extern smc32_handler_t sm_stdcall_table[];
 
@@ -84,59 +110,214 @@ static uint32_t sm_get_api_version(void)
 	return sm_api_version;
 }
 
-static void sm_wait_for_smcall(void)
+static int __NO_RETURN sm_stdcall_loop(void *arg)
 {
-	long ret = 0;
-	smc32_args_t args;
+	long ret;
+	spin_lock_saved_state_t state;
 
 	while (true) {
-		enter_critical_section();
-
-		thread_yield();
-		arch_disable_fiqs();
-		sm_sched_nonsecure(ret, &args);
-
-		/* Pull args out before enabling interrupts */
-		arch_enable_fiqs();
-		exit_critical_section();
+		LTRACEF("cpu %d, wait for stdcall\n", arch_curr_cpu_num());
+		event_wait(&stdcallstate.event);
 
 		/* Dispatch 'standard call' handler */
-		ret = sm_stdcall_table[SMC_ENTITY(args.smc_nr)](&args);
+		LTRACEF("cpu %d, got stdcall: 0x%x, 0x%x, 0x%x, 0x%x\n",
+			arch_curr_cpu_num(),
+			stdcallstate.args.smc_nr, stdcallstate.args.params[0],
+			stdcallstate.args.params[1], stdcallstate.args.params[2]);
+		ret = sm_stdcall_table[SMC_ENTITY(stdcallstate.args.smc_nr)](&stdcallstate.args);
+		LTRACEF("cpu %d, stdcall(0x%x, 0x%x, 0x%x, 0x%x) returned 0x%lx (%ld)\n",
+			arch_curr_cpu_num(),
+			stdcallstate.args.smc_nr, stdcallstate.args.params[0],
+			stdcallstate.args.params[1], stdcallstate.args.params[2], ret, ret);
+		spin_lock_save(&stdcallstate.lock, &state, SPIN_LOCK_FLAG_IRQ);
+		stdcallstate.ret = ret;
+		stdcallstate.done = true;
+		event_unsignal(&stdcallstate.event);
+		spin_unlock_restore(&stdcallstate.lock, state, SPIN_LOCK_FLAG_IRQ);
 	}
 }
 
-void sm_set_mon_stack(void *stack)
+/* must be called with irqs disabled */
+static long sm_queue_stdcall(smc32_args_t *args)
 {
-#if WITH_LIB_SM_MONITOR
-	void monitor_init_secondary(void *secure_svc_stack);
-	monitor_init_secondary(stack);
-#elif WITH_SMP
-	extern void *secondary_cpu_allocated_stack;
-	secondary_cpu_allocated_stack = stack;
-#endif
+	long ret;
+	uint cpu = arch_curr_cpu_num();
+
+	spin_lock(&stdcallstate.lock);
+
+	if (stdcallstate.event.signalled || stdcallstate.done) {
+		if (args->smc_nr == SMC_SC_RESTART_LAST && stdcallstate.active_cpu == -1) {
+			stdcallstate.restart_count++;
+			LTRACEF_LEVEL(3, "cpu %d, restart std call, restart_count %d\n",
+				      cpu, stdcallstate.restart_count);
+			goto restart_stdcall;
+		}
+		dprintf(CRITICAL, "%s: cpu %d, std call busy\n", __func__, cpu);
+		ret = SM_ERR_BUSY;
+		goto err;
+	} else {
+		if (args->smc_nr == SMC_SC_RESTART_LAST) {
+			dprintf(CRITICAL, "%s: cpu %d, unexpected restart, no std call active\n",
+				__func__, arch_curr_cpu_num());
+			ret = SM_ERR_UNEXPECTED_RESTART;
+			goto err;
+		}
+	}
+
+	LTRACEF("cpu %d, queue std call 0x%x\n", cpu, args->smc_nr);
+	stdcallstate.initial_cpu = cpu;
+	stdcallstate.ret = SM_ERR_INTERNAL_FAILURE;
+	stdcallstate.args = *args;
+	stdcallstate.restart_count = 0;
+	event_signal(&stdcallstate.event, false);
+
+restart_stdcall:
+	stdcallstate.active_cpu = cpu;
+	ret = 0;
+
+err:
+	spin_unlock(&stdcallstate.lock);
+
+	return ret;
 }
 
-/* per-cpu secure monitor initialization */
-static void sm_secondary_init(uint level)
+/* must be called with irqs disabled */
+static void sm_return_and_wait_for_next_stdcall(long ret, int cpu)
 {
-	const size_t stack_size = 4096;
-	void *mon_stack;
+	smc32_args_t args = {0};
 
-	/* We need to have a thread context in order to use heap_alloc
-	 * On primary CPU it is bootstrap. Set it to nsthread on
-	 * secondary CPU.
+	do {
+		arch_disable_fiqs();
+		sm_sched_nonsecure(ret, &args);
+		arch_enable_fiqs();
+
+		/* Allow concurrent SMC_SC_NOP calls on multiple cpus */
+		if (args.smc_nr == SMC_SC_NOP) {
+			LTRACEF_LEVEL(3, "cpu %d, got nop\n", cpu);
+			break;
+		}
+
+		ret = sm_queue_stdcall(&args);
+	} while (ret);
+}
+
+static void sm_irq_return_ns(void)
+{
+	long ret;
+	int cpu;
+
+	cpu = arch_curr_cpu_num();
+
+	spin_lock(&stdcallstate.lock); /* TODO: remove? */
+	LTRACEF_LEVEL(2, "got irq on cpu %d, stdcallcpu %d\n",
+		      cpu, stdcallstate.active_cpu);
+	if (stdcallstate.active_cpu == cpu) {
+		stdcallstate.last_cpu = stdcallstate.active_cpu;
+		stdcallstate.active_cpu = -1;
+		ret = SM_ERR_INTERRUPTED;
+	} else {
+		ret = SM_ERR_NOP_INTERRUPTED;
+	}
+	LTRACEF_LEVEL(2, "got irq on cpu %d, return %ld\n", cpu, ret);
+	spin_unlock(&stdcallstate.lock);
+	sm_return_and_wait_for_next_stdcall(ret, cpu);
+}
+
+static int __NO_RETURN sm_irq_loop(void *arg)
+{
+	int cpu;
+	int eventcpu = (uintptr_t)arg; /* cpu that requested this thread, the current cpu could be different */
+
+	/*
+	 * Run this thread with interrupts masked, so we don't reenter the
+	 * interrupt handler. The interrupt handler for non-secure interrupts
+	 * returns to this thread with the interrupt still pending.
 	 */
-	if (!get_current_thread() && nsthread) {
-		set_current_thread(nsthread);
+	arch_disable_ints();
+	irq_thread_ready[eventcpu] = true;
 
-		mon_stack = heap_alloc(stack_size, 8);
-		if (!mon_stack)
-			dprintf(CRITICAL, "failed to allocate monitor mode stack!\n");
-		else
-			sm_set_mon_stack(mon_stack + stack_size);
+	cpu = arch_curr_cpu_num();
+	LTRACEF("wait for irqs for cpu %d, on cpu %d\n", eventcpu, cpu);
+	while (true) {
+		event_wait(&nsirqevent[eventcpu]);
+		sm_irq_return_ns();
 	}
+}
+
+/* must be called with irqs disabled */
+static long sm_get_stdcall_ret(void)
+{
+	long ret;
+	uint cpu = arch_curr_cpu_num();
+
+	spin_lock(&stdcallstate.lock);
+
+	if (stdcallstate.active_cpu != (int)cpu) {
+		dprintf(CRITICAL, "%s: stdcallcpu, a%d != curr-cpu %d, l%d, i%d\n",
+			__func__, stdcallstate.active_cpu, cpu,
+			stdcallstate.last_cpu, stdcallstate.initial_cpu);
+		ret = SM_ERR_INTERNAL_FAILURE;
+		goto err;
+	}
+	stdcallstate.last_cpu = stdcallstate.active_cpu;
+	stdcallstate.active_cpu = -1;
+
+	if (stdcallstate.done) {
+		stdcallstate.done = false;
+		ret = stdcallstate.ret;
+		LTRACEF("cpu %d, return stdcall result, %ld, initial cpu %d\n",
+			cpu, stdcallstate.ret, stdcallstate.initial_cpu);
+	} else {
+		if (sm_get_api_version() >= TRUSTY_API_VERSION_SMP) /* ns using new api */
+			ret = SM_ERR_CPU_IDLE;
+		else if (stdcallstate.restart_count)
+			ret = SM_ERR_BUSY;
+		else
+			ret = SM_ERR_INTERRUPTED;
+		LTRACEF("cpu %d, initial cpu %d, restart_count %d, std call not finished, return %ld\n",
+			cpu, stdcallstate.initial_cpu,
+			stdcallstate.restart_count, ret);
+	}
+err:
+	spin_unlock(&stdcallstate.lock);
+
+	return ret;
+}
+
+static void sm_wait_for_smcall(void)
+{
+	int cpu;
+	long ret = 0;
+
+	LTRACEF("wait for stdcalls, on cpu %d\n", arch_curr_cpu_num());
+
+	while (true) {
+		/*
+		 * Disable interrupts so stdcallstate.active_cpu does not
+		 * change to or from this cpu after checking it below.
+		 */
+		arch_disable_ints();
+
+		/* Switch to sm-stdcall if sm_queue_stdcall woke it up */
+		thread_yield();
+
+		cpu = arch_curr_cpu_num();
+		if (cpu == stdcallstate.active_cpu)
+			ret = sm_get_stdcall_ret();
+		else
+			ret = SM_ERR_NOP_DONE;
+
+		sm_return_and_wait_for_next_stdcall(ret, cpu);
+
+		/* Re-enable interrupts (needed for SMC_SC_NOP) */
+		arch_enable_ints();
+	}
+}
 
 #if WITH_LIB_SM_MONITOR
+/* per-cpu secure monitor initialization */
+static void sm_mon_percpu_init(uint level)
+{
 	/* let normal world enable SMP, lock TLB, access CP10/11 */
 	__asm__ volatile (
 		"mrc	p15, 0, r1, c1, c1, 2	\n"
@@ -150,7 +331,41 @@ static void sm_secondary_init(uint level)
 		"mcr	p15, 0, %0, c12, c0, 1	\n"
 		: : "r" (&monitor_vector_table)
 	);
+}
+LK_INIT_HOOK_FLAGS(libsm_mon_perrcpu, sm_mon_percpu_init,
+		   LK_INIT_LEVEL_PLATFORM - 3, LK_INIT_FLAG_ALL_CPUS);
 #endif
+
+static void sm_secondary_init(uint level)
+{
+	char name[32];
+	int cpu = arch_curr_cpu_num();
+
+	event_init(&nsirqevent[cpu], false, EVENT_FLAG_AUTOUNSIGNAL);
+
+	snprintf(name, sizeof(name), "irq-ns-switch-%d", cpu);
+	nsirqthreads[cpu] = thread_create(name, sm_irq_loop, (void *)(uintptr_t)cpu,
+					  HIGHEST_PRIORITY, DEFAULT_STACK_SIZE);
+	if (!nsirqthreads[cpu]) {
+		panic("failed to create irq NS switcher thread for cpu %d!\n", cpu);
+	}
+	nsirqthreads[cpu]->pinned_cpu = cpu;
+	thread_set_real_time(nsirqthreads[cpu]);
+
+	snprintf(name, sizeof(name), "idle-ns-switch-%d", cpu);
+	nsidlethreads[cpu] = thread_create(name,
+			(thread_start_routine)sm_wait_for_smcall,
+			NULL, LOWEST_PRIORITY + 1, DEFAULT_STACK_SIZE);
+	if (!nsidlethreads[cpu]) {
+		panic("failed to create idle NS switcher thread for cpu %d!\n", cpu);
+	}
+	nsidlethreads[cpu]->pinned_cpu = cpu;
+	thread_set_real_time(nsidlethreads[cpu]);
+
+	if (ns_threads_started) {
+		thread_resume(nsirqthreads[cpu]);
+		thread_resume(nsidlethreads[cpu]);
+	}
 }
 
 LK_INIT_HOOK_FLAGS(libsm_cpu, sm_secondary_init, LK_INIT_LEVEL_PLATFORM - 2, LK_INIT_FLAG_ALL_CPUS);
@@ -182,31 +397,28 @@ static void sm_init(uint level)
 
 	mutex_release(&boot_args_lock);
 
-	nsthread = thread_create("ns-switch",
-			(thread_start_routine)sm_wait_for_smcall,
-			NULL, LOWEST_PRIORITY + 1, DEFAULT_STACK_SIZE);
-	if (!nsthread) {
-		panic("failed to create NS switcher thread!\n");
+	stdcallthread = thread_create("sm-stdcall", sm_stdcall_loop, NULL,
+				      LOWEST_PRIORITY + 2, DEFAULT_STACK_SIZE);
+	if (!stdcallthread) {
+		panic("failed to create sm-stdcall thread!\n");
 	}
+	thread_set_real_time(stdcallthread);
+	thread_resume(stdcallthread);
 }
 
 LK_INIT_HOOK(libsm, sm_init, LK_INIT_LEVEL_PLATFORM - 1);
 
 enum handler_return sm_handle_irq(void)
 {
-	bool fiqs_disabled;
-	smc32_args_t args;
+	int cpu = arch_curr_cpu_num();
+	if (irq_thread_ready[cpu]) {
+		event_signal(&nsirqevent[cpu], false);
+	} else {
+		TRACEF("warning: got ns irq before irq thread is ready\n");
+		sm_irq_return_ns();
+	}
 
-	fiqs_disabled = arch_fiqs_disabled();
-	if (!fiqs_disabled)
-		arch_disable_fiqs();
-	sm_sched_nonsecure(SM_ERR_INTERRUPTED, &args);
-	while (args.smc_nr != SMC_SC_RESTART_LAST)
-		sm_sched_nonsecure(SM_ERR_INTERLEAVED_SMC, &args);
-	if (!fiqs_disabled)
-		arch_enable_fiqs();
-
-	return INT_NO_RESCHEDULE;
+	return INT_RESCHEDULE;
 }
 
 void sm_handle_fiq(void)
@@ -250,6 +462,20 @@ unlock:
 	return err;
 }
 
+static void resume_nsthreads(void)
+{
+	int i;
+
+	ns_threads_started = true;
+	smp_wmb();
+	for (i = 0; i < SMP_MAX_CPUS; i++) {
+		if (nsirqthreads[i])
+			thread_resume(nsirqthreads[i]);
+		if (nsidlethreads[i])
+			thread_resume(nsidlethreads[i]);
+	}
+}
+
 void sm_put_boot_args(void)
 {
 	mutex_acquire(&boot_args_lock);
@@ -264,7 +490,7 @@ void sm_put_boot_args(void)
 	if (boot_args_refcnt == 0) {
 		vmm_free_region(vmm_get_kernel_aspace(), (vaddr_t)boot_args);
 		boot_args = NULL;
-		thread_resume(nsthread);
+		resume_nsthreads();
 	}
 unlock:
 	mutex_release(&boot_args_lock);
@@ -278,7 +504,7 @@ static void sm_release_boot_args(uint level)
 		/* we need to resume the ns-switcher here if
 		 * the boot loader didn't pass bootargs
 		 */
-		thread_resume(nsthread);
+		resume_nsthreads();
 	}
 
 	if (boot_args)

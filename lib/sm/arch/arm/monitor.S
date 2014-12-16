@@ -47,7 +47,10 @@
  *
  */
 
-#define CONTEXT_SIZE ((2 + 5 + 9 + 8 + 3 + 3 + 3 + 3 + 2 + 1) * 4)
+#define CONTEXT_SIZE_RETURN (2 * 4)
+#define CONTEXT_SIZE_SCRATCH_GEN_REGS ((5 + 9) * 4)
+#define CONTEXT_SIZE_MODE_REGS_MON_RETURN ((8 + 3 + 3 + 3 + 3 + 2 + 1) * 4)
+#define CONTEXT_SIZE (CONTEXT_SIZE_RETURN + CONTEXT_SIZE_SCRATCH_GEN_REGS + CONTEXT_SIZE_MODE_REGS_MON_RETURN)
 #define MONITOR_STACK_SIZE (CONTEXT_SIZE * 2)
 
 .macro SAVE_CONTEXT_RETURN
@@ -169,12 +172,28 @@ monitor_vector_table:
  */
 
 FUNCTION(monitor_reset)
+	/* figure out our cpu number */
+	mrc     p15, 0, r11, c0, c0, 5 /* read MPIDR */
+
+	/* mask off the bottom 12 bits to test cluster number:cpu number */
+	ubfx    r11, r11, #0, #12
+
+	/* return if cpu >= SMP_MAX_CPUS */
+	cmp	r11, #SMP_MAX_CPUS
+	bxge	lr
+
+	/* find cpu specifc stack offset */
+	mov	ip, #MONITOR_STACK_SIZE
+	mul	r11, r11,ip
 
 	adr	sp, monitor_reset	/* sp = paddr */
 	ldr	ip, =monitor_reset	/* ip = vaddr */
 	sub	ip, sp, ip		/* ip = phys_offset */
 	ldr	sp, =mon_ns_stack_top	/* sp = ns_stack vaddr */
 	add	sp, sp, ip		/* sp = ns_stack paddr */
+
+	/* apply per-cpu stack offset */
+	sub	sp, sp, r11
 
 	/* Save non-secure return address, mode and registers */
 	cps	#MODE_SVC
@@ -185,7 +204,7 @@ FUNCTION(monitor_reset)
 	SAVE_CONTEXT_SCRATCH_REGS
 	SAVE_CONTEXT_GEN_REGS
 	SAVE_CONTEXT_MODE_REGS
-	ldr	r4, =.Lmon_smcall_initial_ns_return
+	ldr	r4, =platform_mon_initial_ns_return
 	SAVE_RETURN_ADDR r4
 
 	sub	sp, sp, ip	/* sp = sp vaddr */
@@ -209,36 +228,16 @@ FUNCTION(monitor_reset)
 
 	bx	lr
 
-FUNCTION(monitor_init_secondary)
-	push	{r4, r5, r6, lr}
-	mov	r4, r0
-	mov	r0, #MONITOR_STACK_SIZE
-	mov	r1, #8
-	bl	heap_alloc
-
-	mov	r6, sp
-	mov	sp, r4
-
-	/* set up stack and secure context */
-	cps	#MODE_MON
-	add	sp, r0, #(CONTEXT_SIZE)
-	msr	spsr_cfsx, #MODE_SVC_IRQ_FIQ_DISABLED
-	ldr	lr, =arm_smcall
-	SAVE_CONTEXT
-	SAVE_CONTEXT_MODE_REGS
-	ldr	lr, =.Lmon_smcall_secure_return
-	SAVE_RETURN_ADDR lr
-#if 1 /* debug */
-	cmp	r0, sp
-	bne	.
-#endif
-	add	sp, sp, #(MONITOR_STACK_SIZE)
-	cps	MODE_SVC
-
-	mov	sp, r6
-
-	pop	{r4, r5, r6, lr}
+FUNCTION(monitor_init_mmu_on)
 	bx	lr
+
+.Lmon_invalid_ns_return_addr:
+	b	.
+
+FUNCTION(mon_initial_ns_return)
+	cmp	lr, #~0
+	strne	lr, [sp, #CONTEXT_SIZE_SCRATCH_GEN_REGS]
+	b	.Lmon_smcall_initial_ns_return
 
 /* direction in flags */
 .Lmon_smcall_from_secure:
@@ -264,6 +263,8 @@ FUNCTION(monitor_init_secondary)
 	SWITCH_SCR_TO_SECURE r4
 	bl	.Lmon_context_switch
 .Lmon_smcall_initial_ns_return:
+.weak platform_mon_initial_ns_return
+platform_mon_initial_ns_return:
 	RESTORE_CONTEXT_GEN_REGS
 
 	ldr	lr, [sp]
@@ -361,5 +362,5 @@ FUNCTION(monitor_init_secondary)
 
 /* Monitor stack for primary cpu */
 LOCAL_DATA(mon_ns_stack)
-	.skip	MONITOR_STACK_SIZE
-DATA(mon_ns_stack_top)
+	.skip	MONITOR_STACK_SIZE * SMP_MAX_CPUS
+LOCAL_DATA(mon_ns_stack_top)

@@ -85,8 +85,9 @@ static long smc_nop_stdcall(smc32_args_t *args)
 
 static smc32_handler_t sm_stdcall_function_table[] = {
 	[SMC_FUNCTION(SMC_SC_RESTART_LAST)] = smc_restart_stdcall,
-	[SMC_FUNCTION(SMC_SC_NOP)] = smc_nop_stdcall,
+	[SMC_FUNCTION(SMC_SC_LOCKED_NOP)] = smc_nop_stdcall,
 	[SMC_FUNCTION(SMC_SC_RESTART_FIQ)] = smc_restart_stdcall,
+	[SMC_FUNCTION(SMC_SC_NOP)] = smc_undefined, /* reserve slot in table, not called */
 };
 
 static long smc_stdcall_secure_monitor(smc32_args_t *args)
