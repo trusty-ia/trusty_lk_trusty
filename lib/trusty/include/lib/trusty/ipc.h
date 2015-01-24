@@ -83,7 +83,7 @@ enum {
 };
 
 #define IPC_CHAN_MAX_BUFS	32
-#define IPC_CHAN_MAX_BUF_SIZE	512
+#define IPC_CHAN_MAX_BUF_SIZE	4096
 
 typedef struct ipc_chan {
 	struct ipc_chan		*peer;
