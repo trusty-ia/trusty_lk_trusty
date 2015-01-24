@@ -18,7 +18,9 @@ ifeq (true,$(call TOBOOL,$(WITH_TRUSTY_IPC)))
 GLOBAL_DEFINES += WITH_TRUSTY_IPC=1
 
 MODULE_SRCS += \
-	$(LOCAL_DIR)/vqueue.c
+	$(LOCAL_DIR)/vqueue.c \
+	$(LOCAL_DIR)/smcall.c \
+	$(LOCAL_DIR)/trusty_virtio.c
 
 endif
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Google Inc. All rights reserved
+ * Copyright (c) 2013-2014 Google Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -72,5 +72,13 @@
 
 #define SMC_FC_AARCH_SWITCH	SMC_FASTCALL_NR (SMC_ENTITY_SECURE_MONITOR, 9)
 #define SMC_FC_GET_VERSION_STR	SMC_FASTCALL_NR (SMC_ENTITY_SECURE_MONITOR, 10)
+
+/* Trusted OS entity calls */
+#define SMC_SC_VIRTIO_GET_DESCR	  SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 20)
+#define SMC_SC_VIRTIO_START	  SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 21)
+#define SMC_SC_VIRTIO_STOP	  SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 22)
+
+#define SMC_SC_VDEV_RESET	  SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 23)
+#define SMC_SC_VDEV_KICK_VQ	  SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 24)
 
 #endif /* __LIB_SM_SMCALL_H */
