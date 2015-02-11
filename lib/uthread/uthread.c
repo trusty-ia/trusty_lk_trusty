@@ -151,7 +151,7 @@ static status_t uthread_map_alloc(uthread_t *ut, uthread_map_t **mpp,
 
 	ASSERT(!(size & (PAGE_SIZE - 1)));
 
-	if (vaddr + size < vaddr)
+	if (vaddr + size <= vaddr)
 		return ERR_INVALID_ARGS;
 
 	if (flags & UTM_PHYS_CONTIG)
