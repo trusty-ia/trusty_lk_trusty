@@ -206,7 +206,8 @@ out:
 err_free_mp:
 	free(mp);
 err_out:
-	*mpp = NULL;
+	if (mpp)
+		*mpp = NULL;
 	return err;
 }
 
