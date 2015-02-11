@@ -594,6 +594,11 @@ status_t uthread_grant_pages(uthread_t *ut_target, ext_vaddr_t vaddr_src,
 	status_t err;
 	u_int offset;
 
+	if (size == 0) {
+		*vaddr_target = 0;
+		return 0;
+	}
+
 	uthread_t *ut_src = ns_src ? NULL : uthread_get_current();
 
 	mmap_lock_pair(ut_src, ut_target);
@@ -675,6 +680,10 @@ err_out:
 status_t uthread_revoke_pages(uthread_t *ut, vaddr_t vaddr, size_t size)
 {
 	u_int offset = vaddr & (PAGE_SIZE - 1);
+
+	if (size == 0)
+		return 0;
+
 	vaddr = ROUNDDOWN(vaddr, PAGE_SIZE);
 	size  = ROUNDUP(size + offset, PAGE_SIZE);
 
