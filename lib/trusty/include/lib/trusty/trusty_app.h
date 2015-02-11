@@ -30,6 +30,8 @@
 #include <sys/types.h>
 #include <uthread.h>
 
+#include <lib/trusty/uuid.h>
+
 #if WITH_TRUSTY_IPC
 #include <lib/trusty/uctx.h>
 #endif
@@ -41,14 +43,6 @@
 #define PF_TO_UTM_FLAGS(x) ((((x) & PF_R) ? UTM_R : 0) | \
 			    (((x) & PF_W) ? UTM_W : 0) | \
 			    (((x) & PF_X) ? UTM_X : 0))
-
-typedef struct uuid
-{
-	uint32_t time_low;
-	uint16_t time_mid;
-	uint16_t time_hi_and_version;
-	uint8_t clock_seq_and_node[8];
-} uuid_t;
 
 typedef struct
 {
