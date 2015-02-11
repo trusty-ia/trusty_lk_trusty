@@ -31,6 +31,17 @@
 /* Default TIPC device (/dev/trusty-ipc-dev0) */
 DECLARE_TIPC_DEVICE_DESCR(_descr0, 0, 32, 32, "dev0");
 
+/*
+ *  Returns true if uuid is associated with NS client.
+ */
+bool is_ns_client(const uuid_t *uuid)
+{
+	if (uuid == &zero_uuid)
+		return true;
+
+	return false;
+}
+
 static void tipc_init(uint level)
 {
 	status_t res;

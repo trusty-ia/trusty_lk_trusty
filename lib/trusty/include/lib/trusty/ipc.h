@@ -42,8 +42,8 @@ enum {
 };
 
 enum {
-	IPC_PORT_NOTIFY_CREATE		= 1,
-	IPC_PORT_NOTIFY_DESTROY		= 2,
+	IPC_PORT_ALLOW_TA_CONNECT	= 0x1,
+	IPC_PORT_ALLOW_NS_CONNECT	= 0x2,
 };
 
 #define IPC_PORT_PATH_MAX	64
@@ -60,10 +60,6 @@ typedef struct ipc_port {
 	size_t			recv_buf_size;
 
 	handle_t		*handle;
-
-	/* TODO: how do we validate that client *can* open a connection
-	 * to a port?
-	 */
 
 	struct list_node	pending_list;
 

@@ -44,6 +44,7 @@
 #include <lib/trusty/ipc.h>
 #include <lib/trusty/trusty_app.h>
 #include <lib/trusty/uctx.h>
+#include <lib/trusty/tipc_dev.h>
 
 static struct list_node ipc_port_list = LIST_INITIAL_VALUE(ipc_port_list);
 
@@ -523,6 +524,28 @@ static ipc_port_t *wait_for_port_locked(const char * path, lk_time_t timeout)
 	}
 }
 
+
+/*
+ *  Check if connection to specified port is allowed
+ */
+static int check_access(ipc_port_t *port, const uuid_t *uuid)
+{
+	if (!uuid)
+		return ERR_ACCESS_DENIED;
+
+	if (is_ns_client(uuid)) {
+		/* check if this port allows connection from NS clients */
+		if (port->flags & IPC_PORT_ALLOW_NS_CONNECT)
+			return NO_ERROR;
+	} else {
+		/* check if this port allows connection from Trusted Apps */
+		if (port->flags & IPC_PORT_ALLOW_TA_CONNECT)
+			return NO_ERROR;
+	}
+
+	return ERR_ACCESS_DENIED;
+}
+
 /*
  * Client requests a connection to a port. It can be called in context
  * of user task as well as vdev RX thread.
@@ -567,6 +590,13 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 		         path, port->state);
 		ret = ERR_NOT_READY;
 		goto err_state;
+	}
+
+	/* check if we are allowed to connect */
+	ret = check_access(port, cid);
+	if (ret != NO_ERROR) {
+		LTRACEF("access denied: %d\n", ret);
+		goto err_access;
 	}
 
 	/* allocate client channel */
@@ -663,6 +693,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 
 err_wait:
 err_chan_alloc:
+err_access:
 err_state:
 err_find_ports:
 	mutex_release(&ipc_lock);
