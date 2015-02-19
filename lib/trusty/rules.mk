@@ -23,6 +23,10 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/trusty_virtio.c \
 	$(LOCAL_DIR)/tipc_dev.c
 
+ifneq (true,$(call TOBOOL,$(WITH_CUSTOM_TRUSTY_IPC_CONFIG)))
+MODULE_SRCS += \
+	$(LOCAL_DIR)/tipc_config.c
+endif
 endif
 
 GLOBAL_INCLUDES += \
