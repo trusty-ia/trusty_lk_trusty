@@ -12,6 +12,10 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/ipc_msg.c \
 	$(LOCAL_DIR)/iovec.c
 
+ifeq (true,$(call TOBOOL,$(WITH_TRUSTY_IPC)))
+GLOBAL_DEFINES += WITH_TRUSTY_IPC=1
+endif
+
 GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/include \
 
