@@ -66,15 +66,16 @@ static void sm_wait_for_smcall(void)
 	}
 }
 
-#if !WITH_LIB_SM_MONITOR
 void sm_set_mon_stack(void *stack)
 {
-#if WITH_SMP
+#if WITH_LIB_SM_MONITOR
+	void monitor_init_secondary(void *secure_svc_stack);
+	monitor_init_secondary(stack);
+#elif WITH_SMP
 	extern void *secondary_cpu_allocated_stack;
 	secondary_cpu_allocated_stack = stack;
 #endif
 }
-#endif
 
 /* per-cpu secure monitor initialization */
 static void sm_secondary_init(uint level)
@@ -86,14 +87,15 @@ static void sm_secondary_init(uint level)
 	 * On primary CPU it is bootstrap. Set it to nsthread on
 	 * secondary CPU.
 	 */
-	if (!get_current_thread() && nsthread)
+	if (!get_current_thread() && nsthread) {
 		set_current_thread(nsthread);
 
-	mon_stack = heap_alloc(stack_size, 8);
-	if (!mon_stack)
-		dprintf(CRITICAL, "failed to allocate monitor mode stack!\n");
-	else
-		sm_set_mon_stack(mon_stack + stack_size);
+		mon_stack = heap_alloc(stack_size, 8);
+		if (!mon_stack)
+			dprintf(CRITICAL, "failed to allocate monitor mode stack!\n");
+		else
+			sm_set_mon_stack(mon_stack + stack_size);
+	}
 
 #if WITH_LIB_SM_MONITOR
 	/* let normal world enable SMP, lock TLB, access CP10/11 */

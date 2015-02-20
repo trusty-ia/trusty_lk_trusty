@@ -51,11 +51,7 @@
 	cps	#MODE_SYS
 	stmfd	r4!, {sp, lr}
 
-#if WITH_LIB_SM_MONITOR
-	cps	#MODE_MON
-#else
 	cps	#MODE_SVC
-#endif
 	mov	sp, r4
 .endm
 
@@ -81,40 +77,17 @@
 	ldmfd	r4!, {r5, sp, lr}
 	msr	spsr, r5
 
-#if WITH_LIB_SM_MONITOR
-	cps	#MODE_MON
-#else
 	cps	#MODE_SVC
-#endif
 	mov	sp, r4
 	pop	{r4-r11, lr}
 .endm
 
-#if WITH_LIB_SM_MONITOR
-
-.p2align 5
-.globl monitor_vector_table
-monitor_vector_table:
-	nop				/* RESET	*/
-	b	.			/* UNDEF	*/
-	b	arm_smcall		/* SWI		*/
-	b	.			/* IABORT	*/
-	b	.			/* DABORT	*/
-	nop				/* reserved	*/
-	b	.			/* IRQ		*/
-	b	mon_fiq_entry		/* FIQ		*/
-
-#endif
 /* Secure monitor call
  * r0    = SMC call number
  * r1-r3 = args
  * r0    = return value
  */
 FUNCTION(arm_smcall)
-#if WITH_LIB_SM_MONITOR
-	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
-#endif
-
 	tst	r0, #(1 << 30)		/* Check calling convention */
 	movne	r0, #SM_ERR_NOT_SUPPORTED
 	bne	1f
@@ -131,14 +104,10 @@ FUNCTION(arm_smcall)
 	blx	r14
 	add	sp, #(4 * SMC_NUM_ARGS)
 1:
-#if WITH_LIB_SM_MONITOR
-	rfefd	sp!
-#else
 	mov	r1, r0
 	ldr	r0, =SMC_SC_NS_RETURN
 	smc	#0
 	b	arm_smcall
-#endif
 
 FUNCTION(sm_boot_ns_locked)
 #if WITH_SMP
@@ -149,134 +118,24 @@ FUNCTION(sm_boot_ns_locked)
 #endif
 	/* fall through */
 FUNCTION(sm_boot_ns)
-#if WITH_LIB_SM_MONITOR
-	SWITCH_SCR_TO_NONSECURE ip
-#endif
-#if WITH_LIB_SM_MONITOR
-	rfefd	sp!
-#else
 	cpsid	f
 	mov	r1, r0
 	ldr	r0, =SMC_SC_NS_RETURN
 	smc	#0
 	b	arm_smcall
-#endif
-
-#if WITH_LIB_SM_MONITOR
-
-mon_fiq_from_secure:
-	pop	{r0-r3}
-	sub	lr, lr, #4
-	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
-	push	{r0-r4, ip}
-	sub	sp, sp, #(SMC_NUM_ARGS * 4)
-	mov	r0, #SM_ERR_INTERRUPTED
-1:
-	mov	r1, sp
-	bl	go_nonsecure
-	ldr	r0, [sp]	/* r0 = args->smc_nr */
-	ldr	r1, =SMC_SC_RESTART_LAST
-	cmp	r0, r1
-	movne	r0, #SM_ERR_INTERLEAVED_SMC
-	bne	1b
-	add	sp, sp, #(SMC_NUM_ARGS * 4)
-	pop	{r0-r4, ip}
-	rfefd	sp!
-
-mon_fiq_entry:
-	push	{r0-r3}
-
-	mrc	p15, 0, r0, c1, c1, 0	/* r0 = SCR */
-	tst	r0, #0x1
-	beq	mon_fiq_from_secure
-
-	push	{ip, lr}
-	ldr	ip, =sm_intc_fiq_enter
-	blx	ip
-	pop	{ip, lr}
-
-	cmp	r0, #0
-	subne	lr, lr, #4
-	bne	mon_fiq_return
-
-	mrc	p15, 0, r3, c1, c0, 0	/* r3 = Non-secure SCTLR */
-
-	SWITCH_SCR_TO_SECURE r2
-
-	mrs	r0, spsr
-	mov	r1, lr
-
-	mov	r2, #0x91 /* fiq mode with IRQ disabled */
-	msr	spsr_cfsx, r2
-
-	tst	r3, #(1 << 13) /* Non-secure SCTLR.V */
-	ldrne	lr, =0xffff0000
-	mrceq	p15, 0, lr, c12, c0, 0 /* lr = VBAR (if not using Hivecs) */
-	add	lr, lr, #0x1c /* fiq vector offset */
-
-	/* Set fiq mode lr and spsr */
-	cps	#MODE_FIQ
-	msr	spsr_cfsx, r0
-	mov	lr, r1
-	cps	#MODE_MON
-
-	SWITCH_SCR_TO_NONSECURE r2
-
-mon_fiq_return:
-	pop	{r0-r3}
-	movs	pc, lr
-
-FUNCTION(smc_fiq_exit)
-	/* If called from secure, return */
-	mrc	p15, 0, r0, c1, c1, 0	/* r0 = SCR */
-	tst	r0, #0x1
-	bxeq	lr
-
-	/* Remove stack frame created by arm_smcall since we will not return there */
-	pop	{r0-r3}
-	add	sp, sp, #8
-
-	stmfd	sp!, {r1-r3, ip}
-
-	SWITCH_SCR_TO_SECURE r3
-
-	ldr	ip, =sm_intc_fiq_exit
-	blx	ip
-
-	/* Retrieve FIQ mode spsr, lr and restore r0 from FIQ mode r12 */
-	cps	#MODE_FIQ
-
-	mov	r0, r12 /* restore r0 used for smc number */
-	mrs	r1, spsr
-	mov	r2, lr
-
-	cps	#MODE_MON
-
-	mov	lr, r2
-	msr	spsr_cfsx, r1
-
-	SWITCH_SCR_TO_NONSECURE r3
-
-	ldmfd	sp!, {r1-r3, ip}
-	movs	pc, lr
-#endif
 
 FUNCTION(platform_reset)
 #if WITH_LIB_SM_MONITOR
 	cps	#MODE_MON
+	bl	monitor_reset
+	cps	#MODE_SVC
 #endif
+
 	adr	sp, platform_reset	/* sp = paddr */
 	ldr	ip, =platform_reset	/* ip = vaddr */
 	sub	ip, sp, ip		/* ip = phys_offset */
-	ldr	sp, =mon_ns_stack_top	/* sp = ns_stack vaddr */
+	ldr	sp, =ns_stack_top	/* sp = ns_stack vaddr */
 	add	sp, sp, ip		/* sp = ns_stack paddr */
-
-#if WITH_LIB_SM_MONITOR
-	cps	#MODE_SVC
-	msr	spsr_cfsx, #MODE_SVC_IRQ_DISABLED
-	srsdb	sp!, #MODE_MON	/* srsfd alias not recognized by current assembler */
-	cps	#MODE_MON
-#endif
 
 	ldr	lr, =sm_boot_ns_locked
 	SAVE_CONTEXT
@@ -288,26 +147,6 @@ FUNCTION(platform_reset)
 
 	/* Switch to S thread in monitor, stack will be allocated later */
 	ldr	sp, =0
-
-#if WITH_LIB_SM_MONITOR
-	/* Initialize NS mode CPU context registers */
-	mrc	p15, 0, r4, c12, c0, 0	/* r4 = VBAR */
-	mrc	p15, 0, r5, c2, c0, 0	/* r5 = TTBR0 */
-	mrc	p15, 0, r6, c2, c0, 1	/* r6 = TTBR1 */
-	mrc	p15, 0, r7, c3, c0, 0	/* r7 = DACR */
-	mrc	p15, 0, r8, c1, c0, 0	/* r8 = SCTLR */
-
-	SWITCH_SCR_TO_NONSECURE r9
-
-	mcr	p15, 0, r4, c12, c0, 0	/* VBAR = r4 */
-	mcr	p15, 0, r5, c2, c0, 0	/* TTBR0 = r5 */
-	mcr	p15, 0, r6, c2, c0, 1	/* TTBR1 = r6 */
-	mcr	p15, 0, r7, c3, c0, 0	/* DACR = r7 */
-	mcr	p15, 0, r8, c1, c0, 0	/* SCTLR = r8 */
-
-	SWITCH_SCR_TO_SECURE r9
-
-#endif
 
 	/* patch mmu_initial_mappings table */
 	ldr	r5, =mmu_initial_mappings
@@ -362,9 +201,6 @@ FUNCTION(sm_sched_secure)
 	movne	r0, #SM_ERR_BUSY
 	bne	sm_sched_secure_busy
 #endif
-#if WITH_LIB_SM_MONITOR
-	SWITCH_SCR_TO_SECURE r1
-#endif
 	/* Context switch to secure */
 	ldr	r2, =mon_ns_sp
 	ldr	r3, =mon_s_sp
@@ -372,9 +208,6 @@ FUNCTION(sm_sched_secure)
 	push	{ip, lr}
 	bl	sm_context_switch
 	pop	{ip, lr}
-#if WITH_LIB_SM_MONITOR
-	SWITCH_SCR_TO_NONSECURE ip
-#endif
 
 #if WITH_SMP
 	push	{r0, lr}
@@ -391,27 +224,7 @@ sm_sched_secure_busy:
 	mov	ip, #0
 	bx	lr
 
-#if WITH_LIB_SM_MONITOR
-
-FUNCTION(smc_go_nonsecure)
-
-	/* If NS called this, go back */
-	mrc	p15, 0, r1, c1, c1, 0	/* r1 = SCR */
-	tst	r1, #0x1
-	movne	r0, #SM_ERR_NOT_ALLOWED
-	bxne	lr
-
-	/* Save return value from args->params[0] */
-	ldr	r1, [r0, #8]
-	ldr	r0, [r0, #4]
-
-go_nonsecure:
-
-#else /* !WITH_LIB_SM_MONITOR */
-
 FUNCTION(sm_sched_nonsecure)
-
-#endif
 	/* Save secure only state, in case we return on a different cpu */
 #if WITH_LIB_UTHREAD
 	mrc	p15, 0, r2, c13, c0, 1	/* r2 = CONTEXTIDR */
@@ -465,24 +278,6 @@ FUNCTION(sm_sched_nonsecure)
 
 	bx	lr
 
-#if WITH_LIB_SM_MONITOR
-
-/* sm_sched_nonsecure(uint32_t retval, smc32_args_t *args) */
-FUNCTION(sm_sched_nonsecure)
-	mov	r2, r1
-	mov	r1, r0
-	ldr	r0, =SMC_FC_GO_NONSECURE
-	smc	#0
-	bx	lr
-
-FUNCTION(sm_set_mon_stack)
-	cps	#MODE_MON
-	mov	sp, r0
-	cps	MODE_SVC
-	bx	lr
-
-#endif
-
 FUNCTION(smc_fastcall_secure_monitor)
 	ldrh	r1, [r0]	/* r1 = function# */
 	ldr	r2, =sm_nr_fastcall_functions
@@ -496,9 +291,9 @@ FUNCTION(smc_fastcall_secure_monitor)
 .data
 .align 3
 
-LOCAL_DATA(mon_ns_stack)
+LOCAL_DATA(ns_stack)
 	.skip	4096
-DATA(mon_ns_stack_top)
+DATA(ns_stack_top)
 LOCAL_DATA(mon_ns_sp)
 	.long	0
 LOCAL_DATA(mon_s_sp)

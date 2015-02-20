@@ -47,7 +47,6 @@ static mutex_t smc_table_lock = MUTEX_INITIAL_VALUE(smc_table_lock);
 static spin_lock_t suspend_resume_lock;
 
 /* Defined elsewhere */
-long smc_go_nonsecure(smc32_args_t *args);
 long smc_fiq_exit(smc32_args_t *args);
 long smc_fastcall_secure_monitor(smc32_args_t *args);
 
@@ -104,7 +103,6 @@ static long smc_stdcall_secure_monitor(smc32_args_t *args)
 	return handler_fn(args);
 }
 
-#if !WITH_LIB_SM_MONITOR
 long smc_fiq_exit(smc32_args_t *args)
 {
 	sm_intc_fiq_exit();
@@ -116,6 +114,7 @@ static long smc_fiq_enter(smc32_args_t *args)
 	return sm_intc_fiq_enter();
 }
 
+#if !WITH_LIB_SM_MONITOR
 static long smc_cpu_suspend(smc32_args_t *args)
 {
 	spin_lock(&suspend_resume_lock);
@@ -154,14 +153,11 @@ static long smc_get_version_str(smc32_args_t *args)
 #endif
 
 smc32_handler_t sm_fastcall_function_table[] = {
-#if WITH_LIB_SM_MONITOR
-	[SMC_FUNCTION(SMC_FC_GO_NONSECURE)] = smc_go_nonsecure,
-#endif
 	[SMC_FUNCTION(SMC_FC_REQUEST_FIQ)] = smc_intc_request_fiq,
 	[SMC_FUNCTION(SMC_FC_FIQ_EXIT)] = smc_fiq_exit,
 	[SMC_FUNCTION(SMC_FC_GET_NEXT_IRQ)] = smc_intc_get_next_irq,
-#if !WITH_LIB_SM_MONITOR
 	[SMC_FUNCTION(SMC_FC_FIQ_ENTER)] = smc_fiq_enter,
+#if !WITH_LIB_SM_MONITOR
 	[SMC_FUNCTION(SMC_FC_CPU_SUSPEND)] = smc_cpu_suspend,
 	[SMC_FUNCTION(SMC_FC_CPU_RESUME)] = smc_cpu_resume,
 #endif
