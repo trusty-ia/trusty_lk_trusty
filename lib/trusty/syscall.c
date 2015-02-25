@@ -50,12 +50,9 @@ long sys_write(uint32_t fd, void *msg, uint32_t size)
 	}
 
 	if ((fd == 1) || (fd == 2)) {
-		u_int i;
 		/* handle stdout/stderr */
 		int dbg_lvl = (fd == 2) ? INFO : SPEW;
-		for (i = 0; i < size; i++) {
-			dprintf(dbg_lvl, "%c", ((char *)msg)[i]);
-		}
+		dwrite(dbg_lvl, msg, size);
 		return size;
 	}
 
