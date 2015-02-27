@@ -23,10 +23,10 @@
 
 #include <err.h>
 #include <trace.h>
+#include <kernel/vm.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <lib/heap.h>
-#include <lib/kmap.h>
 #include <lib/sm.h>
 #include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
@@ -122,13 +122,16 @@ static void sm_init(uint level)
 
 	/* Map the boot arguments if supplied by the bootloader */
 	if (lk_boot_args[1] && lk_boot_args[2]) {
-		err = kmap_contig(lk_boot_args[1],
-				lk_boot_args[2],
-				KM_W | KM_NS_MEM,
-				PAGE_SIZE_1M,
-				(vaddr_t *)&boot_args);
+		ulong offset = lk_boot_args[1] & (PAGE_SIZE - 1);
+		paddr_t paddr = ROUNDDOWN(lk_boot_args[1], PAGE_SIZE);
+		size_t size   = ROUNDUP(lk_boot_args[2] + offset, PAGE_SIZE);
+		void  *vptr;
 
+		err = vmm_alloc_physical(vmm_get_kernel_aspace(), "sm",
+				 size, &vptr, PAGE_SIZE_SHIFT, paddr,
+				 0, ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_CACHED);
 		if (!err) {
+			boot_args = (uint8_t *)vptr + offset;
 			boot_args_refcnt++;
 		} else {
 			boot_args = NULL;
@@ -199,7 +202,7 @@ void sm_put_boot_args(void)
 
 	boot_args_refcnt--;
 	if (boot_args_refcnt == 0) {
-		kunmap((vaddr_t)boot_args, lk_boot_args[2]);
+		vmm_free_region(vmm_get_kernel_aspace(), (vaddr_t)boot_args);
 		boot_args = NULL;
 		thread_resume(nsthread);
 	}

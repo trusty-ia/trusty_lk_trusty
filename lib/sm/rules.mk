@@ -9,9 +9,6 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/sm.c \
 	$(LOCAL_DIR)/smcall.c \
 
-MODULE_DEPS += \
-	lib/kmap \
-
 include $(LOCAL_DIR)/arch/$(ARCH)/rules.mk
 
 include make/module.mk
