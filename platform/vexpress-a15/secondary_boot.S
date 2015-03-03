@@ -23,34 +23,54 @@
 
 #include <asm.h>
 #include <platform/vexpress-a15.h>
+#include <platform/gic.h>
 #if WITH_LIB_SM
 #include <lib/sm/monitor.h>
 #endif
 
+#define GICC_CTLR               (0x0000)
+#define GICC_IAR                (0x000c)
+#define GICC_EOIR               (0x0010)
+
 .section ".text"
 
 FUNCTION(platform_secondary_entry)
-	/* earlier spin_unlock call performs dsb needed entering wfi below */
-	ldr	r0, =SECONDARY_BOOT_ADDR
-1:
-	wfi
-	ldr	r2, [r0]
-	cmp	r2, r5
-	beq	1b
-	tst	r2, r2
-	beq	1b
+	/* clear wakeup sgi */
+	ldr	r4, =GICBASE(0) + GICC_OFFSET
+	ldr	r5, [r4, #GICC_IAR]
+	str	r5, [r4, #GICC_EOIR]
+
+	b	_start
+
 
 #if WITH_LIB_SM
-	/* Switch to monitor mode */
-	cps	#MODE_MON
 
-	SWITCH_SCR_TO_NONSECURE	r3
+FUNCTION(platform_mon_initial_ns_return)
+	/* figure out our cpu number */
+	mrc	p15, 0, ip, c0, c0, 5 /* read MPIDR */
+
+	/* mask off the bottom 12 bits to test cluster number:cpu number */
+	ubfx	ip, ip, #0, #12
+
+	/* if we're not cpu 0:0, wait for ns reset addr */
+	cmp	ip, #0
+	moveq	lr, #~0
+	beq	mon_initial_ns_return
+
+	ldr	r4, =SECONDARY_BOOT_ADDR
+	ldr	r5, =platform_secondary_entry_paddr
+	ldr	r5, [r5]
+	dsb
+1:
+	wfi
+	ldr	lr, [r4]
+	cmp	lr, r5
+	beq	1b
+	tst	lr, lr
+	beq	1b
+
+	b	mon_initial_ns_return
 #endif
-
-	mov	r3, #0x93 /* svc mode with IRQ disabled */
-	msr	spsr_cfsx, r3
-
-	movs	pc, r2
 
 .ltorg
 

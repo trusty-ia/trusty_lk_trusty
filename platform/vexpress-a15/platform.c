@@ -27,6 +27,7 @@
 #include <debug.h>
 #include <dev/interrupt/arm_gic.h>
 #include <dev/timer/arm_generic.h>
+#include <kernel/thread.h>
 #include <kernel/vm.h>
 #include <lk/init.h>
 #include <platform.h>
@@ -39,6 +40,11 @@
 
 #if WITH_LIB_KMAP
 #include <lib/kmap.h>
+#endif
+
+#if WITH_SMP
+void platform_secondary_entry(void);
+paddr_t platform_secondary_entry_paddr;
 #endif
 
 /* initial memory mappings. parsed by start.S */
@@ -117,15 +123,6 @@ void platform_init_mmu_mappings(void)
 	pmm_add_arena(&ram_arena);
 }
 
-void platform_early_init(void)
-{
-	/* initialize the interrupt controller */
-	arm_gic_init();
-
-	/* initialize the timer block */
-	arm_generic_timer_init(ARM_GENERIC_TIMER_INT);
-}
-
 static uint32_t read_mpidr(void)
 {
 	int mpidr;
@@ -135,7 +132,24 @@ static uint32_t read_mpidr(void)
 	return mpidr;
 }
 
+void platform_early_init(void)
+{
+	/* initialize the interrupt controller */
+	arm_gic_init();
+
+	/* initialize the timer block */
+	arm_generic_timer_init(ARM_GENERIC_TIMER_INT, 0);
+
 #if WITH_SMP
+	dprintf(INFO, "Booting secondary CPUs. Main CPU MPIDR = %x\n", read_mpidr());
+	platform_secondary_entry_paddr = kvaddr_to_paddr(platform_secondary_entry);
+	writel(platform_secondary_entry_paddr, SECONDARY_BOOT_ADDR);
+	arm_gic_sgi(0, ARM_GIC_SGI_FLAG_TARGET_FILTER_NOT_SENDER, 0);
+#endif
+}
+
+#if WITH_SMP
+
 #define GICC_CTLR               (GICC_OFFSET + 0x0000)
 #define GICC_IAR                (GICC_OFFSET + 0x000c)
 #define GICC_EOIR               (GICC_OFFSET + 0x0010)
@@ -148,11 +162,6 @@ static void platform_secondary_init(uint level)
 	if (val)
 		dprintf(INFO, "bad interrupt number on secondary CPU: %x\n", val);
 	*REG32(GICBASE(0) + GICC_EOIR) = val & 0x3ff;
-	arm_gic_init_secondary_cpu();
-
-#if WITH_LIB_SM
-	*REG32(GICBASE(0) + GICC_CTLR) |= 2; /* Enable ns interrupts */
-#endif
 }
 
 LK_INIT_HOOK_FLAGS(vexpress_a15, platform_secondary_init, LK_INIT_LEVEL_PLATFORM, LK_INIT_FLAG_SECONDARY_CPUS);
@@ -160,10 +169,5 @@ LK_INIT_HOOK_FLAGS(vexpress_a15, platform_secondary_init, LK_INIT_LEVEL_PLATFORM
 
 void platform_init(void)
 {
-#if WITH_SMP
-	dprintf(INFO, "Booting secondary CPUs. Main CPU MPIDR = %x\n", read_mpidr());
-	writel(kvaddr_to_paddr(arm_secondary_entry), SECONDARY_BOOT_ADDR);
-	arm_gic_sgi(0, ARM_GIC_SGI_FLAG_TARGET_FILTER_NOT_SENDER, 0);
-#endif
 }
 
