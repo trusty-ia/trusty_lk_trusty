@@ -333,7 +333,8 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 			uint64_t pte = ns_pte_list[pg];
 			if ((flags & UTM_W) && !NS_PTE_AP_U_RW(pte)) {
 				dprintf(CRITICAL, "%s: Making a writable mapping "
-						"to NS read-only page!\n", __func__);
+						"to NS read-only page (pte:0x%llx)!\n", __func__, pte);
+				err = ERR_NOT_VALID;
 				goto err_out;
 			}
 
@@ -343,6 +344,7 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 			if (outer & 0x4) {
 				dprintf(CRITICAL, "%s: Unknown outer cache attributes 0x%x\n",
 						__func__, outer);
+				err = ERR_NOT_VALID;
 				goto err_out;
 			}
 
@@ -350,6 +352,7 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 			if (inner & 0x4) {
 				dprintf(CRITICAL, "%s: Unknown inner cache attributes 0x%x\n",
 						__func__, inner);
+				err = ERR_NOT_VALID;
 				goto err_out;
 			}
 
@@ -424,7 +427,13 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 			goto err_out;
 	}
 
+	return NO_ERROR;
+
 err_out:
+	while (vt > vaddr_target) {
+		vt -= PAGE_SIZE;
+		arm_uthread_mmu_unmap(ut_target, vt);
+	}
 	return err;
 }
 #endif
