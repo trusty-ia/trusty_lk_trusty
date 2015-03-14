@@ -26,6 +26,7 @@
 #include <arch/ops.h>
 #include <platform.h>
 #include <kernel/thread.h>
+#include <kernel/vm.h>
 #include <lib/sm.h>
 #include <lib/sm/smcall.h>
 #include <lk/init.h>
