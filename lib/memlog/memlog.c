@@ -135,7 +135,7 @@ static status_t map_rb(paddr_t pa, size_t sz, vaddr_t *va)
 	sz = ROUNDUP((sz + offset), mb);
 
 	err = vmm_alloc_physical(vmm_get_kernel_aspace(),
-				 "logmem", sz, (void**)va, pa, 0, flags);
+				 "logmem", sz, (void**)va, PAGE_SIZE_SHIFT, pa, 0, flags);
 	if (err) {
 		return err;
 	}
