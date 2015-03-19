@@ -37,6 +37,8 @@
 
 #include <lib/syscall.h>
 
+#include <lib/trusty/uuid.h>
+
 #if WITH_TRUSTY_IPC
 
 #include <lib/trusty/ipc.h>
@@ -86,15 +88,21 @@ bool ipc_is_port(handle_t *handle)
  *  Called by user task to create a new port at the given path.
  *  The returned handle will be later installed into uctx.
  */
-static int ipc_port_create(const char *path, uint num_recv_bufs,
-                           size_t recv_buf_size, uint32_t flags,
-                           handle_t **phandle_ptr)
+int ipc_port_create(const uuid_t *sid, const char *path,
+                    uint num_recv_bufs, size_t recv_buf_size,
+                    uint32_t flags,  handle_t **phandle_ptr)
 {
 	ipc_port_t *new_port;
 	handle_t *new_phandle;
 	int ret = 0;
 
 	LTRACEF("creating port (%s)\n", path);
+
+	if (!sid) {
+		/* server uuid is required */
+		LTRACEF("server uuid is required\n");
+		return ERR_INVALID_ARGS;
+	}
 
 	if (!num_recv_bufs || num_recv_bufs > IPC_CHAN_MAX_BUFS ||
 	    !recv_buf_size || recv_buf_size > IPC_CHAN_MAX_BUF_SIZE) {
@@ -122,6 +130,7 @@ static int ipc_port_create(const char *path, uint num_recv_bufs,
 		goto err_copy_path;
 	}
 
+	new_port->uuid = sid;
 	new_port->num_recv_bufs = num_recv_bufs;
 	new_port->recv_buf_size = recv_buf_size;
 	new_port->flags = flags;
@@ -289,7 +298,8 @@ long __SYSCALL sys_port_create(user_addr_t path, uint num_recv_bufs,
 	}
 
 	/* create new port */
-	ret = ipc_port_create(tmp_path, (uint) num_recv_bufs, recv_buf_size,
+	ret = ipc_port_create(&tapp->props.uuid, tmp_path,
+		              (uint) num_recv_bufs, recv_buf_size,
 		              flags, &port_handle);
 	if (ret != NO_ERROR)
 		goto err_port_create;
@@ -517,7 +527,7 @@ static ipc_port_t *wait_for_port_locked(const char * path, lk_time_t timeout)
  * Client requests a connection to a port. It can be called in context
  * of user task as well as vdev RX thread.
  */
-int ipc_port_connect(const char *path, size_t max_path,
+int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
                      lk_time_t timeout, handle_t **chandle_ptr)
 {
 	ipc_port_t *port;
@@ -526,8 +536,15 @@ int ipc_port_connect(const char *path, size_t max_path,
 	int ret;
 	uint32_t client_event = 0;
 
+	if (!cid) {
+		/* client uuid is required */
+		LTRACEF("client uuid is required\n");
+		return ERR_INVALID_ARGS;
+	}
+
 	if (strnlen(path, max_path) >= max_path) {
 		/* unterminated string */
+		LTRACEF("invalid path specified\n");
 		return ERR_INVALID_ARGS;
 	}
 	/* After this point path is zero terminated */
@@ -568,6 +585,10 @@ int ipc_port_connect(const char *path, size_t max_path,
 		ret = ERR_NO_MEMORY;
 		goto err_chan_alloc;
 	}
+
+	/* attach identity */
+	client->uuid = cid;
+	server->uuid = port->uuid;
 
 	/* tie them together */
 	client->peer = server;
@@ -666,7 +687,7 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 	if ((uint)ret >= sizeof(tmp_path))
 		return (long) ERR_INVALID_ARGS;
 
-	ret = ipc_port_connect(tmp_path, sizeof(tmp_path),
+	ret = ipc_port_connect(&tapp->props.uuid, tmp_path, sizeof(tmp_path),
                                timeout_msecs, &chandle);
 	if (ret != NO_ERROR)
 		return (long) ret;
@@ -684,12 +705,16 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 /*
  *  Called by user task to accept incomming connection
  */
-int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr)
+int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
+                    const uuid_t **uuid_ptr)
 {
 	ipc_port_t *port = phandle->priv;
 	ipc_chan_t *server = NULL;
 	ipc_chan_t *client = NULL;
 	int ret = NO_ERROR;
+
+	DEBUG_ASSERT(chandle_ptr);
+	DEBUG_ASSERT(uuid_ptr);
 
 	if (!phandle || !ipc_is_port(phandle)) {
 		LTRACEF("invalid port handle %p\n", phandle);
@@ -747,6 +772,7 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr)
 	mutex_release(&ipc_lock);
 
 	*chandle_ptr = server->handle;
+	*uuid_ptr = client->uuid;
 
 	return NO_ERROR;
 
@@ -756,7 +782,7 @@ err:
 	return ret;
 }
 
-long __SYSCALL sys_accept(uint32_t handle_id)
+long __SYSCALL sys_accept(uint32_t handle_id, user_addr_t user_uuid)
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
@@ -765,12 +791,13 @@ long __SYSCALL sys_accept(uint32_t handle_id)
 	handle_t *chandle = NULL;
 	int ret;
 	handle_id_t new_id;
+	const uuid_t *peer_uuid_ptr;
 
 	ret = uctx_handle_get(ctx, handle_id, &phandle);
 	if (ret != NO_ERROR)
 		return (long) ret;
 
-	ret = ipc_port_accept(phandle, &chandle);
+	ret = ipc_port_accept(phandle, &chandle, &peer_uuid_ptr);
 	if (ret != NO_ERROR)
 		goto err_accept;
 
@@ -778,9 +805,16 @@ long __SYSCALL sys_accept(uint32_t handle_id)
 	if (ret != NO_ERROR)
 		goto err_install;
 
+	/* copy peer uuid into userspace */
+	ret = copy_to_user(user_uuid, peer_uuid_ptr, sizeof(uuid_t));
+	if (ret != NO_ERROR)
+		goto err_uuid_copy;
+
 	handle_decref(phandle);
 	return (long) new_id;
 
+err_uuid_copy:
+	uctx_handle_remove(ctx, new_id, &chandle);
 err_install:
 	handle_close(chandle);
 err_accept:
@@ -801,7 +835,7 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 	return (long) ERR_NOT_SUPPORTED;
 }
 
-long __SYSCALL sys_accept(uint32_t handle_id)
+long __SYSCALL sys_accept(uint32_t handle_id, uuid_t *peer_uuid)
 {
 	return (long) ERR_NOT_SUPPORTED;
 }

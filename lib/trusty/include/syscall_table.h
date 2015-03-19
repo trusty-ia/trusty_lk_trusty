@@ -37,7 +37,7 @@ DEF_SYSCALL(0x7, gettime, long, 3, uint32_t clock_id, uint32_t flags, int64_t *t
 /* IPC connection establishement syscalls */
 DEF_SYSCALL(0x10, port_create, long, 4, const char *path, uint num_recv_bufs, size_t recv_buf_size, uint32_t flags)
 DEF_SYSCALL(0x11, connect, long, 2, const char *path, unsigned long timeout_msecs)
-DEF_SYSCALL(0x12, accept, long, 1, uint32_t handle_id)
+DEF_SYSCALL(0x12, accept, long, 2, uint32_t handle_id, uuid_t *peer_uuid)
 DEF_SYSCALL(0x13, close, long, 1, uint32_t handle_id)
 DEF_SYSCALL(0x14, set_cookie, long, 2, uint32_t handle, void *cookie)
 

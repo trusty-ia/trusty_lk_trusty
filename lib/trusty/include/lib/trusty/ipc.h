@@ -33,6 +33,7 @@
 
 #include <lib/trusty/handle.h>
 #include <lib/trusty/ipc_msg.h>
+#include <lib/trusty/uuid.h>
 
 enum {
 	IPC_PORT_STATE_INVALID		= 0,
@@ -50,7 +51,7 @@ enum {
 typedef struct ipc_port {
 	/* e.g. /service/sys/crypto, /service/usr/drm/widevine */
 	char			path[IPC_PORT_PATH_MAX];
-	/* TODO: need a uuid too? */
+	const struct uuid	*uuid;
 
 	uint32_t		state;
 	uint32_t		flags;
@@ -86,6 +87,7 @@ enum {
 
 typedef struct ipc_chan {
 	struct ipc_chan		*peer;
+	const struct uuid	*uuid;
 
 	uint32_t		state;
 	uint32_t		flags;
@@ -98,11 +100,17 @@ typedef struct ipc_chan {
 	ipc_msg_queue_t		*msg_queue;
 } ipc_chan_t;
 
+/* called by server to create port */
+int ipc_port_create(const uuid_t *sid, const char *path,
+                    uint num_recv_bufs, size_t recv_buf_size,
+                    uint32_t flags,  handle_t **phandle_ptr);
+
 /* server calls to accept a pending connection */
-int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr);
+int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
+                    const uuid_t **uuid_ptr);
 
 /* client requests a connection to a port */
-int ipc_port_connect(const char *path, size_t max_path,
+int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
                      lk_time_t timeout,  handle_t **chandle_ptr);
 
 bool ipc_is_channel(handle_t *handle);
