@@ -44,7 +44,6 @@
 #define LOCAL_TRACE	1
 
 static mutex_t smc_table_lock = MUTEX_INITIAL_VALUE(smc_table_lock);
-static spin_lock_t suspend_resume_lock;
 
 /* Defined elsewhere */
 long smc_fiq_exit(smc32_args_t *args);
@@ -118,20 +117,14 @@ static long smc_fiq_enter(smc32_args_t *args)
 #if !WITH_LIB_SM_MONITOR
 static long smc_cpu_suspend(smc32_args_t *args)
 {
-	spin_lock(&suspend_resume_lock);
-	lk_cpu_suspend_reset_init_level();
-	lk_cpu_suspend_init_level(LK_INIT_LEVEL_LAST);
-	spin_unlock(&suspend_resume_lock);
+	lk_init_level_all(LK_INIT_FLAG_CPU_SUSPEND);
 
 	return 0;
 }
 
 static long smc_cpu_resume(smc32_args_t *args)
 {
-	spin_lock(&suspend_resume_lock);
-	lk_cpu_resume_reset_init_level();
-	lk_cpu_resume_init_level(LK_INIT_LEVEL_LAST);
-	spin_unlock(&suspend_resume_lock);
+	lk_init_level_all(LK_INIT_FLAG_CPU_RESUME);
 
 	return 0;
 }
