@@ -28,6 +28,13 @@
 #include <sys/types.h>
 #include <lib/sm/smcall.h>
 
+typedef uint64_t ns_addr_t;
+typedef uint32_t ns_size_t;
+
+typedef struct ns_page_info {
+	uint64_t attr;
+} ns_page_info_t;
+
 typedef struct smc32_args {
 	uint32_t smc_nr;
 	uint32_t params[SMC_NUM_PARAMS];
@@ -63,6 +70,10 @@ void sm_put_boot_args(void);
 
 /* Register handler(s) for an entity */
 status_t sm_register_entity(uint entity_nr, smc32_entity_t *entity);
+
+/* Helper function to get NS memory buffer info out of smc32 call params */
+status_t smc32_decode_mem_buf_info(struct smc32_args *args, ns_addr_t *ppa,
+                                   ns_size_t *psz, uint *pmmu);
 
 #endif /* __SM_H */
 
