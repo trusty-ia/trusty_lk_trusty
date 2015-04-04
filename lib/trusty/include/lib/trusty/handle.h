@@ -41,6 +41,7 @@ enum {
 	IPC_HANDLE_POLL_ERROR	= 0x2,
 	IPC_HANDLE_POLL_HUP	= 0x4,
 	IPC_HANDLE_POLL_MSG	= 0x8,
+	IPC_HANDLE_POLL_SEND_UNBLOCKED = 0x10,
 };
 
 struct handle_ops;
@@ -68,6 +69,7 @@ typedef struct handle {
 
 struct handle_ops {
 	uint32_t (*poll)(handle_t *handle);
+	void (*finalize_event)(handle_t *handle, uint32_t event);
 	void (*shutdown)(handle_t *handle);
 	void (*destroy)(handle_t *handle);
 };

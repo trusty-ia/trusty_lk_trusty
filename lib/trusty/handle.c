@@ -139,6 +139,7 @@ static void _finish_wait_handle(event_t *ev, handle_t *handle)
 int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 {
 	status_t status;
+	uint32_t event;
 	event_t ev;
 	int ret = 0;
 
@@ -153,8 +154,10 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 		goto err_prepare_wait;
 	}
 
-	*handle_event = handle->ops->poll(handle);
-	if (*handle_event != 0) {
+	event = handle->ops->poll(handle);
+	if (event) {
+		if (handle->ops->finalize_event)
+			handle->ops->finalize_event(handle, event);
 		ret = 1;
 		goto got_event;
 	} else if (timeout == 0) {
@@ -164,8 +167,10 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 
 	status = __do_wait(&ev, timeout);
 
-	*handle_event = handle->ops->poll(handle);
-	if (*handle_event != 0) {
+	event = handle->ops->poll(handle);
+	if (event) {
+		if (handle->ops->finalize_event)
+			handle->ops->finalize_event(handle, event);
 		ret = 1;
 		goto got_event;
 	} else if (status == ERR_TIMED_OUT) {
@@ -176,8 +181,9 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 	LTRACEF("%s: error waiting %d\n", __func__, status);
 	ret = ERR_IO;
 
-err_timed_out:
 got_event:
+	*handle_event = event;
+err_timed_out:
 	_finish_wait_handle(&ev, handle);
 err_prepare_wait:
 	event_destroy(&ev);
@@ -265,7 +271,7 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 	struct list_node wait_handles = LIST_INITIAL_VALUE(wait_handles);
 	event_t ev;
 	int num_ready = 0;
-	uint32_t handle_event;
+	uint32_t event;
 
 	DEBUG_ASSERT(hlist);
 	DEBUG_ASSERT(handle_ptr);
@@ -300,14 +306,16 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 		 * would mean that we'd have nothing to notify later and wait
 		 * forever.
 		 */
-		handle_event = handle->ops->poll(handle);
-		if (handle_event != 0) {
-			LTRACEF("got event 0x%x on %p\n", handle_event, handle);
+		event = handle->ops->poll(handle);
+		if (event) {
+			LTRACEF("got event 0x%x on %p\n", event, handle);
 			num_ready++;
 			if (*handle_ptr == 0) {
+				if (handle->ops->finalize_event)
+					handle->ops->finalize_event(handle, event);
 				handle_incref(handle);
 				*handle_ptr = handle;
-				*event_ptr = handle_event;
+				*event_ptr = event;
 			}
 		}
 	}
@@ -328,14 +336,16 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 	__do_wait(&ev, timeout);
 
 	list_for_every_entry(&wait_handles, handle, handle_t, waiter_node) {
-		handle_event = handle->ops->poll(handle);
-		if (handle_event != 0) {
-			LTRACEF("got event 0x%x on %p\n", handle_event, handle);
+		event = handle->ops->poll(handle);
+		if (event) {
+			LTRACEF("got event 0x%x on %p\n", event, handle);
 			num_ready++;
 			if (*handle_ptr == 0) {
+				if (handle->ops->finalize_event)
+					handle->ops->finalize_event(handle, event);
 				handle_incref(handle);
 				*handle_ptr = handle;
-				*event_ptr = handle_event;
+				*event_ptr = event;
 			}
 		}
 	}

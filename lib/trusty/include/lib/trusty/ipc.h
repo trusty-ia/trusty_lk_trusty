@@ -78,6 +78,12 @@ enum {
 	IPC_CHAN_FLAG_SERVER		= 0x1,
 };
 
+/* aux state bitmasks */
+enum {
+	IPC_CHAN_AUX_STATE_SEND_BLOCKED = 0x1,
+	IPC_CHAN_AUX_STATE_SEND_UNBLOCKED = 0x2,
+};
+
 #define IPC_CHAN_MAX_BUFS	32
 #define IPC_CHAN_MAX_BUF_SIZE	4096
 
@@ -87,6 +93,7 @@ typedef struct ipc_chan {
 
 	uint32_t		state;
 	uint32_t		flags;
+	uint32_t		aux_state;
 
 	handle_t		*handle;
 

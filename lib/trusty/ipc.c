@@ -58,6 +58,7 @@ static void port_shutdown(handle_t *handle);
 static void port_handle_destroy(handle_t *handle);
 
 static uint32_t chan_poll(handle_t *handle);
+static void chan_finalize_event(handle_t *handle, uint32_t event);
 static void chan_shutdown(handle_t *handle);
 static void chan_handle_destroy(handle_t *handle);
 
@@ -72,6 +73,7 @@ static struct handle_ops ipc_port_handle_ops = {
 
 static struct handle_ops ipc_chan_handle_ops = {
 	.poll		= chan_poll,
+	.finalize_event = chan_finalize_event,
 	.shutdown	= chan_shutdown,
 	.destroy	= chan_handle_destroy,
 };
@@ -491,11 +493,28 @@ static uint32_t chan_poll(handle_t *chandle)
 		events |= IPC_HANDLE_POLL_READY | IPC_HANDLE_POLL_MSG;
 	}
 
+	/* check if we were send blocked */
+	if (chan->aux_state & IPC_CHAN_AUX_STATE_SEND_UNBLOCKED) {
+		events |= IPC_HANDLE_POLL_SEND_UNBLOCKED;
+	}
+
 done:
 	mutex_release(&ipc_lock);
 	return events;
 }
 
+static void chan_finalize_event(handle_t *chandle, uint32_t event)
+{
+	DEBUG_ASSERT(chandle);
+	DEBUG_ASSERT(ipc_is_channel(chandle));
+
+	if (event & IPC_HANDLE_POLL_SEND_UNBLOCKED) {
+		mutex_acquire(&ipc_lock);
+		ipc_chan_t *chan = chandle->priv;
+		chan->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
+		mutex_release(&ipc_lock);
+	}
+}
 
 /*
  *  Lookup an existing port or wait for up to specified timeout
