@@ -26,41 +26,78 @@
 #include <debug.h>
 #include <err.h>
 #include <kernel/thread.h>
+#include <kernel/mutex.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <platform.h>
 #include <uthread.h>
+#include <lib/trusty/sys_fd.h>
 #include <lib/trusty/trusty_app.h>
 
-#ifdef WITH_LIB_OTE
-#include <lib/ote.h>
-#endif
+static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size);
+
+static mutex_t fd_lock = MUTEX_INITIAL_VALUE(fd_lock);
+
+static const struct sys_fd_ops sys_std_fd_op = {
+	.write = sys_std_write,
+};
+
+static struct sys_fd_ops const *sys_fds[MAX_SYS_FD_HADLERS] = {
+	[1] = &sys_std_fd_op,  /* stdout */
+	[2] = &sys_std_fd_op,  /* stderr */
+};
+
+status_t install_sys_fd_handler(uint32_t fd, const struct sys_fd_ops *ops)
+{
+	status_t ret;
+
+	if (fd >= countof(sys_fds))
+		return ERR_INVALID_ARGS;
+
+	mutex_acquire(&fd_lock);
+	if (!sys_fds[fd]) {
+		sys_fds[fd] = ops;
+		ret = NO_ERROR;
+	} else {
+		ret = ERR_ALREADY_EXISTS;
+	}
+	mutex_release(&fd_lock);
+	return ret;
+}
+
+static const struct sys_fd_ops *get_sys_fd_handler(uint32_t fd)
+{
+	if (fd >= countof(sys_fds))
+		return NULL;
+
+	return sys_fds[fd];
+}
 
 static bool valid_address(vaddr_t addr, u_int size)
 {
 	return uthread_is_valid_range(uthread_get_current(), addr, size);
 }
 
-long sys_write(uint32_t fd, void *msg, uint32_t size)
+/* handle stdout/stderr */
+static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size)
 {
 	/* check buffer is in task's address space */
-	if (valid_address((vaddr_t)msg, size) == false) {
+	if (!valid_address((vaddr_t)user_ptr, size))
 		return ERR_INVALID_ARGS;
-	}
 
-	if ((fd == 1) || (fd == 2)) {
-		/* handle stdout/stderr */
-		int dbg_lvl = (fd == 2) ? INFO : SPEW;
-		dwrite(dbg_lvl, msg, size);
-		return size;
-	}
+	dwrite((fd == 2) ? INFO : SPEW, (const void *)user_ptr, size);
+	return size;
+}
 
-#ifdef WITH_LIB_OTE
-	return ote_sys_write(fd, msg, size);
-#else
-	return ERR_INVALID_ARGS;
-#endif
+long sys_write(uint32_t fd, user_addr_t user_ptr, uint32_t size)
+{
+	const struct sys_fd_ops *ops = get_sys_fd_handler(fd);
+
+	if (ops && ops->write)
+		return ops->write(fd, user_ptr, size);
+
+	return ERR_NOT_SUPPORTED;
 }
 
 long sys_brk(u_int brk)
@@ -83,27 +120,25 @@ long sys_exit_group(void)
 	return 0L;
 }
 
-#ifdef WITH_LIB_OTE
-long sys_read(uint32_t fd, void *msg, uint32_t size)
+long sys_read(uint32_t fd, user_addr_t user_ptr, uint32_t size)
 {
-	return ote_sys_read(fd, msg, size);
-}
+	const struct sys_fd_ops *ops = get_sys_fd_handler(fd);
 
-long sys_ioctl(uint32_t fd, uint32_t req, void *buf)
-{
-	return ote_sys_ioctl(fd, req, buf);
-}
-#else
-long sys_read(uint32_t fd, void *msg, uint32_t size)
-{
+	if (ops && ops->read)
+		return ops->read(fd, user_ptr, size);
+
 	return ERR_NOT_SUPPORTED;
 }
 
-long sys_ioctl(uint32_t fd, uint32_t req, void *buf)
+long sys_ioctl(uint32_t fd, uint32_t req, user_addr_t user_ptr)
 {
+	const struct sys_fd_ops *ops = get_sys_fd_handler(fd);
+
+	if (ops && ops->ioctl)
+		return ops->ioctl(fd, req, user_ptr);
+
 	return ERR_NOT_SUPPORTED;
 }
-#endif /* WITH_LIB_OTE */
 
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
 
