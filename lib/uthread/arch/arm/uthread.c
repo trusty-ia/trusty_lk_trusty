@@ -183,7 +183,7 @@ done:
 	return err;
 }
 
-#ifdef WITH_LIB_OTE
+#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
 static void arm_write_v2p(ext_vaddr_t vaddr, v2p_t v2p)
 {
 	switch(v2p) {

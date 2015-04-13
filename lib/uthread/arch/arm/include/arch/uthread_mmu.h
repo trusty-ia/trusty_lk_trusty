@@ -44,7 +44,7 @@
 #define MAX_USR_VA		((MMU_MEMORY_TTBR0_L1_SIZE / 4) * \
 				((MMU_MEMORY_TTBR_L2_SIZE / 4) * PAGE_SIZE))
 
-#ifdef WITH_LIB_OTE
+#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
 /* PAR register: common defines (between short/long desc) */
 #define PAR_ATTR_FAULTED	(0x1 <<  0)
 #define PAR_ATTR_LPAE		(0x1 << 11)
@@ -104,7 +104,7 @@ typedef enum {
 /* Outer cache attrs MAIR_ATTR_N[7:4] */
 #define NS_PTE_ATTR_OUTER(pte)	(((NS_PTE_ATTR_MAIR(pte)) & 0xF0) >> 4)
 
-#endif /* WITH_LIB_OTE */
+#endif /* UTHREAD_WITH_MEMORY_MAPPING_SUPPORT */
 
 typedef enum {
 	PGTBL_NONE = 0,

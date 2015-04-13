@@ -46,7 +46,7 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp);
 status_t arch_uthread_unmap(struct uthread *ut, struct uthread_map *mp);
 
-#ifdef WITH_LIB_OTE
+#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
 status_t arch_uthread_translate_map(struct uthread *ut_target, ext_vaddr_t vaddr_src,
 		vaddr_t vaddr_target, paddr_t *pfn_list,
 		uint32_t npages, u_int flags, bool ns_src,

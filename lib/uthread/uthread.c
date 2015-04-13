@@ -524,7 +524,7 @@ ssize_t strncpy_from_user(char *kdst, user_addr_t usrc, size_t len)
 	return (ssize_t) (ksrc - (char *)usrc);
 }
 
-#ifdef WITH_LIB_OTE
+#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
 
 static inline void mmap_lock_pair (uthread_t *source, uthread_t *target)
 {

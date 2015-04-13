@@ -162,7 +162,7 @@ static inline uthread_t *uthread_get_current(void)
 	return (uthread_t *)tls_get(TLS_ENTRY_UTHREAD);
 }
 
-#ifdef WITH_LIB_OTE
+#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
 /* Translate virtual address to physical address */
 status_t uthread_virt_to_phys(uthread_t *ut, vaddr_t vaddr, paddr_t *paddr);
 
