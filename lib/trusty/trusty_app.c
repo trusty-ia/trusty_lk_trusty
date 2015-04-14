@@ -162,12 +162,6 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
 			i += 3;
 			break;
 		default:
-#ifdef WITH_LIB_OTE
-			/* Give OTE a chance to recognize this key */
-			if (ote_load_config_option(trusty_app,
-					config_blob, &i) == NO_ERROR)
-				break;
-#endif
 			dprintf(CRITICAL,
 				"%s: unknown config key: %d\n",
 				__func__, config_blob[i]);
