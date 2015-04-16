@@ -33,10 +33,6 @@
 
 #include <lib/trusty/uuid.h>
 
-#ifdef WITH_LIB_OTE
-#include <lib/ote.h>
-#endif
-
 #define PF_TO_UTM_FLAGS(x) ((((x) & PF_R) ? UTM_R : 0) | \
 			    (((x) & PF_W) ? UTM_W : 0) | \
 			    (((x) & PF_X) ? UTM_X : 0))
@@ -60,11 +56,6 @@ typedef struct trusty_app
 	vaddr_t end_brk;
 
 	trusty_app_props_t props;
-
-#ifdef WITH_LIB_OTE
-	ote_server_t ote_server;
-	ote_client_t ote_client;
-#endif
 
 	Elf32_Ehdr *elf_hdr;
 
