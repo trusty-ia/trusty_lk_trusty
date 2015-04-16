@@ -61,7 +61,7 @@ struct uctx {
 /*
  *  Get uctx context of the current app
  */
-static uctx_t *_get_uctx(void)
+uctx_t *current_uctx(void)
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
@@ -246,7 +246,7 @@ typedef struct uevent {
 long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
                         unsigned long timeout_msecs)
 {
-	uctx_t *ctx = _get_uctx();
+	uctx_t *ctx = current_uctx();
 	handle_t *handle;
 	uevent_t tmp_event;
 	int ret;
@@ -291,7 +291,7 @@ out:
  */
 long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
 {
-	uctx_t *ctx = _get_uctx();
+	uctx_t *ctx = current_uctx();
 	handle_t *handle;
 	uevent_t tmp_event;
 	int ret;
@@ -339,7 +339,7 @@ long __SYSCALL sys_close(uint32_t handle_id)
 	LTRACEF("[%p][%d]\n", uthread_get_current(),
 	                      handle_id);
 
-	int ret = uctx_handle_remove(_get_uctx(), handle_id, &handle);
+	int ret = uctx_handle_remove(current_uctx(), handle_id, &handle);
 	if (ret != NO_ERROR)
 		return ret;
 
@@ -354,7 +354,7 @@ long __SYSCALL sys_set_cookie(uint32_t handle_id, user_addr_t cookie)
 	LTRACEF("[%p][%d]: cookie = 0x%08x\n", uthread_get_current(),
 	                              handle_id, (uint) cookie);
 
-	int ret = uctx_handle_get(_get_uctx(), handle_id, &handle);
+	int ret = uctx_handle_get(current_uctx(), handle_id, &handle);
 	if (ret != NO_ERROR)
 		return ret;
 

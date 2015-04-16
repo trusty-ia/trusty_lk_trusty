@@ -283,7 +283,7 @@ long __SYSCALL sys_port_create(user_addr_t path, uint num_recv_bufs,
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
-	uctx_t *ctx = tapp->uctx;
+	uctx_t *ctx = current_uctx();
 	handle_t *port_handle = NULL;
 	int ret;
 	handle_id_t handle_id;
@@ -706,7 +706,7 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
-	uctx_t *ctx = tapp->uctx;
+	uctx_t *ctx = current_uctx();
 	handle_t *chandle;
 	char tmp_path[IPC_PORT_PATH_MAX];
 	int ret;
@@ -816,9 +816,7 @@ err:
 
 long __SYSCALL sys_accept(uint32_t handle_id, user_addr_t user_uuid)
 {
-	uthread_t *ut = uthread_get_current();
-	trusty_app_t *tapp = ut->private_data;
-	uctx_t *ctx = tapp->uctx;
+	uctx_t *ctx = current_uctx();
 	handle_t *phandle = NULL;
 	handle_t *chandle = NULL;
 	int ret;

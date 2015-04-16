@@ -183,13 +183,6 @@ static inline msg_item_t *msg_queue_get_item(ipc_msg_queue_t *mq, uint32_t id)
 	return id < mq->num_items ? &mq->items[id] : NULL;
 }
 
-static uctx_t *_get_uctx(void)
-{
-	uthread_t *ut = uthread_get_current();
-	trusty_app_t *tapp = ut->private_data;
-	return tapp->uctx;
-}
-
 static int check_channel_locked(handle_t *chandle)
 {
 	if (unlikely(!chandle))
@@ -197,7 +190,7 @@ static int check_channel_locked(handle_t *chandle)
 
 	if (unlikely(!ipc_is_channel(chandle)))
 		return ERR_INVALID_ARGS;
-	
+
 	return NO_ERROR;
 }
 
@@ -302,7 +295,7 @@ static int msg_read_locked(ipc_msg_queue_t *mq, uint32_t msg_id,
 
 	const uint8_t *buf = msg_queue_get_buf(mq, item) + offset;
 	size_t bytes_left = item->len - offset;
-	
+
 	if (msg->type == IPC_MSG_BUFFER_KERNEL) {
 		if (msg->kern.num_handles) {
 			LTRACEF("handles are not supported yet\n");
@@ -387,7 +380,7 @@ long __SYSCALL sys_send_msg(uint32_t handle_id, user_addr_t user_msg)
 		return (long) ret;
 
 	/* grab handle */
-	ret = uctx_handle_get(_get_uctx(), handle_id, &chandle);
+	ret = uctx_handle_get(current_uctx(), handle_id, &chandle);
 	if (unlikely(ret != NO_ERROR))
 		return (long) ret;
 
@@ -441,7 +434,7 @@ long __SYSCALL sys_get_msg(uint32_t handle_id, user_addr_t user_msg_info)
 	int ret;
 
 	/* grab handle */
-	ret = uctx_handle_get(_get_uctx(), handle_id, &chandle);
+	ret = uctx_handle_get(current_uctx(), handle_id, &chandle);
 	if (ret != NO_ERROR)
 		return (long) ret;
 
@@ -493,7 +486,7 @@ long __SYSCALL sys_put_msg(uint32_t handle_id, uint32_t msg_id)
 	handle_t *chandle;
 
 	/* grab handle */
-	int ret = uctx_handle_get(_get_uctx(), handle_id, &chandle);
+	int ret = uctx_handle_get(current_uctx(), handle_id, &chandle);
 	if (unlikely(ret != NO_ERROR))
 		return (long) ret;
 
@@ -535,10 +528,10 @@ long __SYSCALL sys_read_msg(uint32_t handle_id, uint32_t msg_id, uint32_t offset
 		return (long) ret;
 
 	/* grab handle */
-	ret = uctx_handle_get(_get_uctx(), handle_id, &chandle);
+	ret = uctx_handle_get(current_uctx(), handle_id, &chandle);
 	if (unlikely(ret != NO_ERROR))
 		return (long) ret;
-	
+
 	mutex_acquire(&ipc_lock);
 	/* check if channel handle is a valid one */
 	ret = check_channel_locked (chandle);
