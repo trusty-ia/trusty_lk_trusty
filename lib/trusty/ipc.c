@@ -224,7 +224,7 @@ static void port_handle_destroy(handle_t *phandle)
 	   node should not be in the list
 	 */
 	DEBUG_ASSERT(list_is_empty(&port->pending_list));
-	DEBUG_ASSERT(list_in_list(&port->node));
+	DEBUG_ASSERT(!list_in_list(&port->node));
 
 	LTRACEF("destroying port %p ('%s')\n", port, port->path);
 
