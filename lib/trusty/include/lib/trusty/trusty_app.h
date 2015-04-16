@@ -84,5 +84,20 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
 trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid);
 void trusty_app_forall(void (*fn)(trusty_app_t *ta, void *data), void *data);
 
+typedef struct trusty_app_notifier
+{
+	struct list_node node;
+	status_t (*startup)(trusty_app_t *app);
+	status_t (*shutdown)(trusty_app_t *app);
+} trusty_app_notifier_t;
+
+
+/*
+ * All app notifiers registration has to be complete before
+ * libtrusty is initialized which is happening at LK_INIT_LEVEL_APPS-1
+ * init level.
+ */
+status_t trusty_register_app_notifier(trusty_app_notifier_t *n);
+
 #endif
 

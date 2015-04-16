@@ -30,6 +30,7 @@
 #include <debug.h>
 #include <elf.h>
 #include <err.h>
+#include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <malloc.h>
 #include <platform.h>
@@ -78,6 +79,9 @@ static u_int trusty_app_image_size;
 extern intptr_t __trusty_app_start;
 extern intptr_t __trusty_app_end;
 
+static bool apps_started;
+static mutex_t apps_lock = MUTEX_INITIAL_VALUE(apps_lock);
+static struct list_node app_notifier_list = LIST_INITIAL_VALUE(app_notifier_list);
 #define PRINT_TRUSTY_APP_UUID(tid,u)					\
 	dprintf(SPEW,							\
 		"trusty_app %d uuid: 0x%x 0x%x 0x%x 0x%x%x 0x%x%x%x%x%x%x\n",\
@@ -92,6 +96,26 @@ extern intptr_t __trusty_app_end;
 		(u)->clock_seq_and_node[5],				\
 		(u)->clock_seq_and_node[6],				\
 		(u)->clock_seq_and_node[7]);
+
+static void finalize_registration(void)
+{
+	mutex_acquire(&apps_lock);
+	apps_started = true;
+	mutex_release(&apps_lock);
+}
+
+status_t trusty_register_app_notifier(trusty_app_notifier_t *n)
+{
+	status_t ret = NO_ERROR;
+
+	mutex_acquire(&apps_lock);
+	if (!apps_started)
+		list_add_tail(&app_notifier_list, &n->node);
+	else
+		ret = ERR_ALREADY_STARTED;
+	mutex_release(&apps_lock);
+	return ret;
+}
 
 static void load_app_config_options(intptr_t trusty_app_image_addr,
 		trusty_app_t *trusty_app, Elf32_Shdr *shdr)
@@ -509,7 +533,7 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 	return ERR_NOT_FOUND;
 }
 
-void trusty_app_init()
+void trusty_app_init(void)
 {
 	trusty_app_t *trusty_app;
 	u_int i;
@@ -519,6 +543,8 @@ void trusty_app_init()
 	trusty_app_image_size = (trusty_app_image_end - trusty_app_image_start);
 
 	ASSERT(!((uint32_t)trusty_app_image_start & PAGE_MASK));
+
+	finalize_registration();
 
 	trusty_app_bootloader();
 
@@ -564,6 +590,15 @@ void trusty_app_init()
 		ret = alloc_address_map(trusty_app);
 		if (ret != NO_ERROR) {
 			panic("failed to load address map\n");
+		}
+		/* call all registered startup notifiers */
+		trusty_app_notifier_t *n;
+		list_for_every_entry(&app_notifier_list, n, trusty_app_notifier_t, node) {
+			if (n->startup) {
+				ret = n->startup(trusty_app);
+				if (ret != NO_ERROR)
+					panic("failed (%d) to invoke startup notifier\n", ret);
+			}
 		}
 	}
 }
