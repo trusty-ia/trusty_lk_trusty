@@ -33,10 +33,6 @@
 
 #include <lib/trusty/uuid.h>
 
-#if WITH_TRUSTY_IPC
-#include <lib/trusty/uctx.h>
-#endif
-
 #ifdef WITH_LIB_OTE
 #include <lib/ote.h>
 #endif
@@ -73,10 +69,6 @@ typedef struct trusty_app
 	Elf32_Ehdr *elf_hdr;
 
 	uthread_t *ut;
-
-#if WITH_TRUSTY_IPC
-	uctx_t *uctx;
-#endif
 
 	/* app local storage */
 	void **als;

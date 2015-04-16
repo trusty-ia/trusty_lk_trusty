@@ -42,6 +42,7 @@
 
 #if WITH_TRUSTY_IPC
 
+#include <lk/init.h>
 #include <lib/trusty/handle.h>
 #include <lib/trusty/trusty_app.h>
 #include <lib/trusty/uctx.h>
@@ -57,6 +58,42 @@ struct uctx {
 	handle_list_t		handle_list;
 };
 
+static status_t _uctx_startup(trusty_app_t *app);
+
+static uint _uctx_slot_id;
+static struct trusty_app_notifier _uctx_notifier = {
+	.startup = _uctx_startup,
+};
+
+static status_t _uctx_startup(trusty_app_t *app)
+{
+	uctx_t *uctx;
+
+	int err = uctx_create(app, &uctx);
+	if (err)
+		return err;
+
+	trusty_als_set(app, _uctx_slot_id, uctx);
+	return NO_ERROR;
+}
+
+static void uctx_init(uint level)
+{
+	int res;
+
+	/* allocate als slot */
+	res = trusty_als_alloc_slot();
+	if (res < 0)
+		panic("failed (%d) to alloc als slot\n", res);
+	_uctx_slot_id = res;
+
+	/* register notifier */
+	res = trusty_register_app_notifier(&_uctx_notifier);
+	if (res < 0)
+		panic("failed (%d) to register uctx notifier\n", res);
+}
+
+LK_INIT_HOOK(uctx, uctx_init, LK_INIT_LEVEL_APPS - 2);
 
 /*
  *  Get uctx context of the current app
@@ -65,7 +102,7 @@ uctx_t *current_uctx(void)
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
-	return tapp->uctx;
+	return trusty_als_get(tapp, _uctx_slot_id);
 }
 
 /*

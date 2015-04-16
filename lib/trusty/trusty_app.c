@@ -586,13 +586,6 @@ void trusty_app_init(void)
 		}
 		trusty_app->ut = uthread;
 
-#if WITH_TRUSTY_IPC
-		ret = uctx_create(trusty_app, &trusty_app->uctx);
-		if (ret != NO_ERROR)
-			panic("failed allocating thread ipc context (%d)\n", ret);
-
-#endif
-
 #if WITH_LIB_OTE
 		ret = ote_client_init(&trusty_app->ote_client);
 		if (ret != NO_ERROR)
