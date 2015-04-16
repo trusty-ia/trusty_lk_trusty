@@ -37,6 +37,7 @@
  * @{
  */
 
+#include <assert.h>
 #include <err.h>
 #include <list.h>
 #include <stdbool.h>

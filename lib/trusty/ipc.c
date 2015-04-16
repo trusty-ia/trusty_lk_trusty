@@ -23,6 +23,7 @@
 
 #define LOCAL_TRACE 0
 
+#include <assert.h>
 #include <err.h>
 #include <list.h>
 #include <stdlib.h>
