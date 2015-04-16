@@ -25,6 +25,7 @@
 #ifndef __LIB_TRUSTY_APP_H
 #define __LIB_TRUSTY_APP_H
 
+#include <assert.h>
 #include <elf.h>
 #include <list.h>
 #include <sys/types.h>
@@ -76,6 +77,9 @@ typedef struct trusty_app
 #if WITH_TRUSTY_IPC
 	uctx_t *uctx;
 #endif
+
+	/* app local storage */
+	void **als;
 } trusty_app_t;
 
 void trusty_app_init(void);
@@ -99,5 +103,26 @@ typedef struct trusty_app_notifier
  */
 status_t trusty_register_app_notifier(trusty_app_notifier_t *n);
 
-#endif
+/*
+ * All als slots must be allocated before libtrusty is initialized
+ * which is happening at LK_INIT_LEVEL_APPS-1 init level.
+ */
+int trusty_als_alloc_slot(void);
 
+extern uint als_slot_cnt;
+
+static inline void *trusty_als_get(struct trusty_app *app, int slot_id)
+{
+	uint slot = slot_id - 1;
+	ASSERT(slot < als_slot_cnt);
+	return app->als[slot];
+}
+
+static inline void trusty_als_set(struct trusty_app *app, int slot_id, void *ptr)
+{
+	uint slot = slot_id - 1;
+	ASSERT(slot < als_slot_cnt);
+	app->als[slot] = ptr;
+}
+
+#endif

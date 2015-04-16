@@ -82,6 +82,8 @@ extern intptr_t __trusty_app_end;
 static bool apps_started;
 static mutex_t apps_lock = MUTEX_INITIAL_VALUE(apps_lock);
 static struct list_node app_notifier_list = LIST_INITIAL_VALUE(app_notifier_list);
+uint als_slot_cnt;
+
 #define PRINT_TRUSTY_APP_UUID(tid,u)					\
 	dprintf(SPEW,							\
 		"trusty_app %d uuid: 0x%x 0x%x 0x%x 0x%x%x 0x%x%x%x%x%x%x\n",\
@@ -116,6 +118,20 @@ status_t trusty_register_app_notifier(trusty_app_notifier_t *n)
 	mutex_release(&apps_lock);
 	return ret;
 }
+
+int trusty_als_alloc_slot(void)
+{
+	int ret;
+
+	mutex_acquire(&apps_lock);
+	if (!apps_started)
+		ret = ++als_slot_cnt;
+	else
+		ret = ERR_ALREADY_STARTED;
+	mutex_release(&apps_lock);
+	return ret;
+}
+
 
 static void load_app_config_options(intptr_t trusty_app_image_addr,
 		trusty_app_t *trusty_app, Elf32_Shdr *shdr)
@@ -591,6 +607,13 @@ void trusty_app_init(void)
 		if (ret != NO_ERROR) {
 			panic("failed to load address map\n");
 		}
+
+		/* attach als_cnt */
+		trusty_app->als = calloc(1, als_slot_cnt * sizeof(void*));
+		if (!trusty_app->als) {
+			panic("allocate app local storage failed\n");
+		}
+
 		/* call all registered startup notifiers */
 		trusty_app_notifier_t *n;
 		list_for_every_entry(&app_notifier_list, n, trusty_app_notifier_t, node) {
