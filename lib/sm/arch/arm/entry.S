@@ -28,13 +28,6 @@
 
 #include <kernel/vm.h>
 
-#if !WITH_LIB_SM_MONITOR
-
-#define TOS_COMPLETION		1
-#define TOS_INITIAL_NS_RETURN	3
-
-#endif
-
 .macro SAVE_CONTEXT
 	push	{r4-r11, lr}
 	mov	r4, sp
@@ -142,7 +135,7 @@ FUNCTION(arm_smcall)
 	rfefd	sp!
 #else
 	mov	r1, r0
-	ldr	r0, =TOS_COMPLETION
+	ldr	r0, =SMC_SC_NS_RETURN
 	smc	#0
 	b	arm_smcall
 #endif
@@ -164,7 +157,7 @@ FUNCTION(sm_boot_ns)
 #else
 	cpsid	f
 	mov	r1, r0
-	ldr	r0, =TOS_INITIAL_NS_RETURN
+	ldr	r0, =SMC_SC_NS_RETURN
 	smc	#0
 	b	arm_smcall
 #endif
