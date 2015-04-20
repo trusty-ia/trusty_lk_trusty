@@ -57,6 +57,7 @@ typedef struct handle {
 	 * handle.
 	 */
 	event_t			*wait_event;
+	mutex_t			wait_event_lock;
 	/* a list node that the waiters can use to keep track of multiple
 	 * handles they are waiting on.
 	 */

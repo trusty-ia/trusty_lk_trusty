@@ -54,6 +54,7 @@ int handle_alloc(struct handle_ops *ops, void *priv, handle_t **handle_ptr)
 	handle->ops = ops;
 	handle->priv = priv;
 	handle->wait_event = NULL;
+	mutex_init(&handle->wait_event_lock);
 	handle->cookie = NULL;
 	list_clear_node(&handle->waiter_node);
 	list_clear_node(&handle->hlist_node);
@@ -113,7 +114,7 @@ static int _prepare_wait_handle(event_t *ev, handle_t *handle)
 {
 	int ret = 0;
 
-	enter_critical_section();
+	mutex_acquire(&handle->wait_event_lock);
 	if (unlikely(handle->wait_event)) {
 		LTRACEF("someone is already waiting on handle %p?!\n",
 			handle);
@@ -121,19 +122,19 @@ static int _prepare_wait_handle(event_t *ev, handle_t *handle)
 	} else {
 		handle->wait_event = ev;
 	}
-	exit_critical_section();
+	mutex_release(&handle->wait_event_lock);
 	return ret;
 }
 
 static void _finish_wait_handle(event_t *ev, handle_t *handle)
 {
 	/* clear out our event ptr */
-	enter_critical_section();
+	mutex_acquire(&handle->wait_event_lock);
 	if (unlikely(handle->wait_event != ev))
 		TRACEF("handle %p stolen in wait!! %p != %p\n", handle,
 		       handle->wait_event, ev);
 	handle->wait_event = NULL;
-	exit_critical_section();
+	mutex_release(&handle->wait_event_lock);
 }
 
 int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
@@ -196,13 +197,13 @@ void handle_notify(handle_t *handle)
 
 	/* TODO: need to keep track of the number of events posted? */
 
-	enter_critical_section();
+	mutex_acquire(&handle->wait_event_lock);
 	if (handle->wait_event) {
 		LTRACEF("notifying handle %p wait_event %p\n",
 			handle, handle->wait_event);
 		event_signal(handle->wait_event, true);
 	}
-	exit_critical_section();
+	mutex_release(&handle->wait_event_lock);
 }
 
 void handle_list_init(handle_list_t *hlist)

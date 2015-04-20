@@ -110,7 +110,7 @@ int ipc_port_create(const uuid_t *sid, const char *path,
 
 	if (!num_recv_bufs || num_recv_bufs > IPC_CHAN_MAX_BUFS ||
 	    !recv_buf_size || recv_buf_size > IPC_CHAN_MAX_BUF_SIZE) {
-		LTRACEF("Invalid buffer sizes: %d x %d\n",
+		LTRACEF("Invalid buffer sizes: %d x %ld\n",
 		        num_recv_bufs, recv_buf_size);
 		return ERR_INVALID_ARGS;
 	}
@@ -263,10 +263,8 @@ static int ipc_port_publish(handle_t *phandle)
 		port->state = IPC_PORT_STATE_LISTENING;
 		list_add_tail(&ipc_port_list, &port->node);
 		/* kick all threads that are waiting for services */
-		enter_critical_section();
 		event_signal(&srv_event, false);
 		event_unsignal(&srv_event);
-		exit_critical_section();
 	}
 	mutex_release(&ipc_lock);
 
