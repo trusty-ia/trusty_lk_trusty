@@ -142,8 +142,10 @@ long sys_ioctl(uint32_t fd, uint32_t req, user_addr_t user_ptr)
 
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
 
-long sys_nanosleep(uint32_t clock_id, uint32_t flags, uint64_t sleep_time)
+long sys_nanosleep(uint32_t clock_id, uint32_t flags,
+		   uint32_t sleep_time_l, uint32_t sleep_time_h)
 {
+	uint64_t sleep_time = sleep_time_l + ((uint64_t)sleep_time_h << 32);
 	thread_sleep((lk_time_t)(DIV_ROUND_UP(sleep_time, 1000 * 1000)));
 
 	return NO_ERROR;
