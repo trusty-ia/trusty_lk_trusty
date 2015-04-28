@@ -58,9 +58,10 @@ int platform_dgetc(char *c, bool wait)
 	}
 }
 
+#ifndef WITH_LIB_SM
 void platform_halt(void)
 {
 	arch_disable_ints();
 	for (;;);
 }
-
+#endif
