@@ -820,13 +820,10 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 	 */
 	handle_notify(client->handle);
 
-	mutex_release(&ipc_lock);
-
 	*chandle_ptr = server->handle;
 	*uuid_ptr = client->uuid;
 
-	return NO_ERROR;
-
+	ret = NO_ERROR;
 err:
 	mutex_release(&ipc_lock);
 
