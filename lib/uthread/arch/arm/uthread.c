@@ -304,6 +304,7 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 	vaddr_t vt;
 	u_int l1_flags, l2_flags;
 	status_t err = NO_ERROR;
+	u_int first_inner, first_outer, first_shareable;
 
 	type = (flags & UTM_W) ?
 		(ns_src ? ATS12NSOUW : ATS1CUW) :
@@ -317,7 +318,6 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 	vt = vaddr_target;
 	for (pg = 0; pg < npages; pg++, vs += PAGE_SIZE, vt += PAGE_SIZE) {
 		u_int inner, outer, shareable;
-		u_int first_inner, first_outer, first_shareable;
 		uint64_t par;
 		uint64_t physaddr;
 
