@@ -121,7 +121,7 @@ static void platform_after_vm_init(uint level)
 	arm_gic_init();
 
 	/* initialize the timer block */
-	arm_generic_timer_init(ARM_GENERIC_TIMER_INT);
+	arm_generic_timer_init(ARM_GENERIC_TIMER_INT, 0);
 }
 
 LK_INIT_HOOK(platform_after_vm, platform_after_vm_init, LK_INIT_LEVEL_VM + 1);
