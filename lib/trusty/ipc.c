@@ -97,7 +97,6 @@ int ipc_port_create(const uuid_t *sid, const char *path,
                     uint32_t flags,  handle_t **phandle_ptr)
 {
 	ipc_port_t *new_port;
-	handle_t *new_phandle;
 	int ret = 0;
 
 	LTRACEF("creating port (%s)\n", path);
@@ -142,20 +141,14 @@ int ipc_port_create(const uuid_t *sid, const char *path,
 	new_port->state = IPC_PORT_STATE_INVALID;
 	list_initialize(&new_port->pending_list);
 
-	ret = handle_alloc(&ipc_port_handle_ops, new_port, &new_phandle);
-	if (ret) {
-		LTRACEF("cannot allocate handle for port\n");
-		goto err_handle_alloc;
-	}
+	handle_init(&new_port->handle, &ipc_port_handle_ops);
 
 	LTRACEF("new port %p created (%s)\n", new_port, new_port->path);
 
-	new_port->handle = new_phandle;
-	*phandle_ptr = new_phandle;
+	*phandle_ptr = &new_port->handle;
 
 	return NO_ERROR;
 
-err_handle_alloc:
 err_copy_path:
 	free(new_port);
 	return ret;
@@ -174,7 +167,7 @@ static void port_shutdown(handle_t *phandle)
 
 	mutex_acquire(&ipc_lock);
 
-	ipc_port_t *port = phandle->priv;
+	ipc_port_t *port = containerof(phandle, ipc_port_t, handle);
 
 	LTRACEF("shutting down port %p\n", port);
 
@@ -194,7 +187,7 @@ static void port_shutdown(handle_t *phandle)
 		   side will be deleted  by the other side
 		 */
 		chan_shutdown_locked(server);
-		handle_decref(server->handle);
+		handle_decref(&server->handle);
 
 		/* decrement usage count on port as pending connection
 		   is gone
@@ -219,8 +212,7 @@ static void port_handle_destroy(handle_t *phandle)
 	ASSERT(phandle);
 	ASSERT(ipc_is_port(phandle));
 
-	ipc_port_t *port = phandle->priv;
-	DEBUG_ASSERT(port);
+	ipc_port_t *port = containerof(phandle, ipc_port_t, handle);
 
 	/* pending list should be empty and
 	   node should not be in the list
@@ -229,12 +221,6 @@ static void port_handle_destroy(handle_t *phandle)
 	DEBUG_ASSERT(!list_in_list(&port->node));
 
 	LTRACEF("destroying port %p ('%s')\n", port, port->path);
-
-	/* mark it as invalid */
-	port->state = IPC_PORT_STATE_INVALID;
-
-	/* detach handle from port */
-	port->handle  = NULL;
 
 	free(port);
 }
@@ -251,8 +237,7 @@ static int ipc_port_publish(handle_t *phandle)
 
 	mutex_acquire(&ipc_lock);
 
-	ipc_port_t *port = phandle->priv;
-	DEBUG_ASSERT(port);
+	ipc_port_t *port = containerof(phandle, ipc_port_t, handle);
 	DEBUG_ASSERT(!list_in_list(&port->node));
 
 	/* Check for duplicates */
@@ -345,7 +330,7 @@ static uint32_t port_poll(handle_t *phandle)
 	DEBUG_ASSERT(phandle);
 	DEBUG_ASSERT(ipc_is_port(phandle));
 
-	ipc_port_t *port = phandle->priv;
+	ipc_port_t *port = containerof(phandle, ipc_port_t, handle);
 	uint32_t events = 0;
 
 	mutex_acquire(&ipc_lock);
@@ -366,7 +351,6 @@ static ipc_chan_t *chan_alloc(uint32_t init_state, uint32_t flags,
                               uint num_bufs, size_t buf_size)
 {
 	ipc_chan_t *chan;
-	handle_t *chandle;
 	int ret;
 
 	chan = calloc(1, sizeof(ipc_chan_t));
@@ -382,15 +366,10 @@ static ipc_chan_t *chan_alloc(uint32_t init_state, uint32_t flags,
 	chan->state = init_state;
 	chan->flags = flags;
 
-	ret = handle_alloc(&ipc_chan_handle_ops, chan, &chandle);
-	if (ret != NO_ERROR)
-		goto err_handle_alloc;
+	handle_init(&chan->handle, &ipc_chan_handle_ops);
 
-	chan->handle = chandle;
 	return chan;
 
-err_handle_alloc:
-	ipc_msg_queue_destroy(chan->msg_queue);
 err_mq_init:
 	free(chan);
 	return NULL;
@@ -404,14 +383,14 @@ static void chan_shutdown_locked(ipc_chan_t *chan)
 		return;
 
 	chan->state = IPC_CHAN_STATE_DISCONNECTING;
-	handle_notify(chan->handle);
+	handle_notify(&chan->handle);
 
 	ipc_chan_t *peer = chan->peer;
 	if (peer) {
 		peer->state = IPC_CHAN_STATE_DISCONNECTING;
 		peer->peer = NULL;
 		chan->peer = NULL;
-		handle_notify(peer->handle);
+		handle_notify(&peer->handle);
 	}
 }
 
@@ -425,8 +404,7 @@ static void chan_shutdown(handle_t *chandle)
 
 	mutex_acquire(&ipc_lock);
 
-	ipc_chan_t *chan = chandle->priv;
-	DEBUG_ASSERT(chan);
+	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 
 	chan_shutdown_locked(chan);
 
@@ -438,8 +416,7 @@ static void chan_handle_destroy(handle_t *chandle)
 	DEBUG_ASSERT(chandle);
 	DEBUG_ASSERT(ipc_is_channel(chandle));
 
-	ipc_chan_t *chan = chandle->priv;
-	DEBUG_ASSERT(chan);
+	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 
 	LTRACEF("chan = %p\n", chan);
 
@@ -464,8 +441,7 @@ static uint32_t chan_poll(handle_t *chandle)
 	/* TODO: finer locking? */
 	mutex_acquire(&ipc_lock);
 
-	ipc_chan_t *chan = chandle->priv;
-	DEBUG_ASSERT(chan);
+	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 
 	uint32_t events = 0;
 
@@ -508,7 +484,7 @@ static void chan_finalize_event(handle_t *chandle, uint32_t event)
 
 	if (event & IPC_HANDLE_POLL_SEND_UNBLOCKED) {
 		mutex_acquire(&ipc_lock);
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		chan->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
 		mutex_release(&ipc_lock);
 	}
@@ -629,7 +605,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 	server = chan_alloc(IPC_CHAN_STATE_ACCEPTING, IPC_CHAN_FLAG_SERVER,
 			    port->num_recv_bufs, port->recv_buf_size);
 	if (!server) {
-		handle_decref(client->handle);
+		handle_decref(&client->handle);
 		ret = ERR_NO_MEMORY;
 		goto err_chan_alloc;
 	}
@@ -648,10 +624,10 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 	list_add_tail(&port->pending_list, &server->node);
 
 	/* bump a ref to the port while there's a pending connection */
-	handle_incref(port->handle);
+	handle_incref(&port->handle);
 
 	/* Notify port that there is a pending connection */
-	handle_notify(port->handle);
+	handle_notify(&port->handle);
 
 	mutex_release(&ipc_lock);
 
@@ -659,7 +635,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 	/* TODO: should we figure out how to not wait here but wait
 	 * for an event later?
 	 */
-	ret = handle_wait(client->handle, &client_event, timeout);
+	ret = handle_wait(&client->handle, &client_event, timeout);
 
 	mutex_acquire(&ipc_lock);
 
@@ -682,7 +658,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 		chan_shutdown_locked (client);
 
 		/* destroy client channel. server channel will be destroyed by server */
-		handle_decref(client->handle);
+		handle_decref(&client->handle);
 
 		if (ret == 0) {
 			/* server failed to respond in time */
@@ -705,7 +681,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 
 	mutex_release(&ipc_lock);
 
-	*chandle_ptr = client->handle;
+	*chandle_ptr = &client->handle;
 
 	return NO_ERROR;
 
@@ -757,7 +733,7 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
                     const uuid_t **uuid_ptr)
 {
-	ipc_port_t *port = phandle->priv;
+	ipc_port_t *port;
 	ipc_chan_t *server = NULL;
 	ipc_chan_t *client = NULL;
 	int ret = NO_ERROR;
@@ -769,6 +745,8 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 		LTRACEF("invalid port handle %p\n", phandle);
 		return ERR_INVALID_ARGS;
 	}
+
+	port = containerof(phandle, ipc_port_t, handle);
 
 	mutex_acquire(&ipc_lock);
 
@@ -794,7 +772,7 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 	DEBUG_ASSERT(server->flags & IPC_CHAN_FLAG_SERVER);
 
 	/* drop the ref to port we took in connect() */
-	handle_decref(port->handle);
+	handle_decref(&port->handle);
 
 	client = server->peer;
 
@@ -807,7 +785,7 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 			client, client ? client->state : 0xDEADBEEF,
 			server, server->state);
 		chan_shutdown_locked(server);
-		handle_decref(server->handle);
+		handle_decref(&server->handle);
 		ret = ERR_CHANNEL_CLOSED;
 		goto err;
 	}
@@ -816,9 +794,9 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 	/* Note: we let client transition itself, so it can poll on this
 	 * condition
 	 */
-	handle_notify(client->handle);
+	handle_notify(&client->handle);
 
-	*chandle_ptr = server->handle;
+	*chandle_ptr = &server->handle;
 	*uuid_ptr = client->uuid;
 
 	ret = NO_ERROR;

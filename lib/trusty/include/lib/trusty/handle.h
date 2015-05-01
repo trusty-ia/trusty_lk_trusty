@@ -50,8 +50,6 @@ typedef struct handle {
 	refcount_t		refcnt;
 
 	struct handle_ops	*ops;
-	void			*priv;
-	struct list_node	pending_node;
 
 	/* pointer to a wait queue on which threads wait for events for this
 	 * handle.
@@ -87,7 +85,7 @@ typedef struct handle_list {
 }
 
 /* handle management */
-int handle_alloc(struct handle_ops *ops, void *priv, handle_t **handle_ptr);
+void handle_init(handle_t *handle, struct handle_ops *ops);
 void handle_close(handle_t *handle);
 
 void handle_incref(handle_t *handle);

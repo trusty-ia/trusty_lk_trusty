@@ -200,8 +200,7 @@ static int check_channel_connected_locked(handle_t *chandle)
 	if (unlikely(ret != NO_ERROR))
 		return ret;
 
-	ipc_chan_t *chan = chandle->priv;
-	DEBUG_ASSERT(chan); /* there should be chan */
+	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 
 	if (likely(chan->state == IPC_CHAN_STATE_CONNECTED)) {
 		DEBUG_ASSERT(chan->peer); /* there should be peer */
@@ -375,7 +374,7 @@ static int msg_put_read_locked(ipc_chan_t *chan, uint32_t msg_id)
 	if (peer && (peer->aux_state & IPC_CHAN_AUX_STATE_SEND_BLOCKED)) {
 		peer->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_BLOCKED;
 		peer->aux_state |=  IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
-		handle_notify(peer->handle);
+		handle_notify(&peer->handle);
 	}
 
 	return NO_ERROR;
@@ -403,12 +402,12 @@ long __SYSCALL sys_send_msg(uint32_t handle_id, user_addr_t user_msg)
 	/* check if it is  avalid channel to call send_msg */
 	ret = check_channel_connected_locked(chandle);
 	if (likely(ret == NO_ERROR)) {
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		/* do write message to target channel  */
 		ret = msg_write_locked(chan, &tmp_msg);
 		if (ret >= 0) {
 			/* and notify target */
-			handle_notify(chan->peer->handle);
+			handle_notify(&chan->peer->handle);
 		}
 	}
 	mutex_release(&ipc_lock);
@@ -430,10 +429,10 @@ int ipc_send_msg(handle_t *chandle, ipc_msg_kern_t *msg)
 	mutex_acquire(&ipc_lock);
 	ret = check_channel_connected_locked(chandle);
 	if (likely(ret == NO_ERROR)) {
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		ret = msg_write_locked(chan, &tmp_msg);
 		if (ret >= 0) {
-			handle_notify(chan->peer->handle);
+			handle_notify(&chan->peer->handle);
 		}
 	}
 	mutex_release(&ipc_lock);
@@ -455,7 +454,7 @@ long __SYSCALL sys_get_msg(uint32_t handle_id, user_addr_t user_msg_info)
 	/* check if channel handle is a valid one */
 	ret = check_channel_locked(chandle);
 	if (likely(ret == NO_ERROR)) {
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		/* peek next filled message */
 		ret = msg_peek_next_filled_locked(chan->msg_queue, &msg_info);
 		if (likely(ret == NO_ERROR)) {
@@ -481,7 +480,7 @@ int ipc_get_msg(handle_t *chandle, ipc_msg_info_t *msg_info)
 	/* check if channel handle */
 	ret = check_channel_locked(chandle);
 	if (likely(ret == NO_ERROR)) {
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		/* peek next filled message */
 		ret  = msg_peek_next_filled_locked(chan->msg_queue, msg_info);
 		if (likely(ret == NO_ERROR)) {
@@ -518,7 +517,7 @@ int ipc_put_msg(handle_t *chandle, uint32_t msg_id)
 	/* check is channel handle is a valid one */
 	ret = check_channel_locked(chandle);
 	if (likely(ret == NO_ERROR)) {
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		/* retire message */
 		ret = msg_put_read_locked(chan, msg_id);
 	}
@@ -549,7 +548,7 @@ long __SYSCALL sys_read_msg(uint32_t handle_id, uint32_t msg_id, uint32_t offset
 	/* check if channel handle is a valid one */
 	ret = check_channel_locked (chandle);
 	if (ret == NO_ERROR) {
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		/* read message content */
 		ret = msg_read_locked(chan->msg_queue, msg_id,
 		                      offset, &tmp_msg);
@@ -575,7 +574,7 @@ int ipc_read_msg(handle_t *chandle, uint32_t msg_id, uint32_t offset,
 	mutex_acquire(&ipc_lock);
 	ret = check_channel_locked (chandle);
 	if (ret == NO_ERROR) {
-		ipc_chan_t *chan = chandle->priv;
+		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		ret = msg_read_locked(chan->msg_queue, msg_id,
 		                      offset, &tmp_msg);
 	}

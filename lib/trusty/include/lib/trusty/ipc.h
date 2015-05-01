@@ -59,7 +59,7 @@ typedef struct ipc_port {
 	uint			num_recv_bufs;
 	size_t			recv_buf_size;
 
-	handle_t		*handle;
+	handle_t		handle;
 
 	struct list_node	pending_list;
 
@@ -95,7 +95,7 @@ typedef struct ipc_chan {
 	uint32_t		flags;
 	uint32_t		aux_state;
 
-	handle_t		*handle;
+	handle_t		handle;
 
 	/* used for port's pending list */
 	struct list_node	node;

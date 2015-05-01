@@ -40,33 +40,19 @@
 #include <lib/syscall.h>
 #include <lib/trusty/ipc.h>
 
-int handle_alloc(struct handle_ops *ops, void *priv, handle_t **handle_ptr)
+void handle_init(handle_t *handle, struct handle_ops *ops)
 {
-	handle_t *handle;
-
-	DEBUG_ASSERT(handle_ptr);
-
-	handle = malloc(sizeof(handle_t));
-	if (!handle)
-		return ERR_NO_MEMORY;
+	DEBUG_ASSERT(handle);
+	DEBUG_ASSERT(ops);
+	DEBUG_ASSERT(ops->destroy);
 
 	refcount_init(&handle->refcnt);
 	handle->ops = ops;
-	handle->priv = priv;
 	handle->wait_event = NULL;
 	mutex_init(&handle->wait_event_lock);
 	handle->cookie = NULL;
 	list_clear_node(&handle->waiter_node);
 	list_clear_node(&handle->hlist_node);
-
-	*handle_ptr = handle;
-	return NO_ERROR;
-}
-
-static inline void __handle_free(handle_t *handle)
-{
-	DEBUG_ASSERT(handle);
-	free(handle);
 }
 
 static void __handle_destroy_ref(refcount_t *ref)
@@ -74,10 +60,7 @@ static void __handle_destroy_ref(refcount_t *ref)
 	DEBUG_ASSERT(ref);
 
 	handle_t *handle = containerof(ref, handle_t, refcnt);
-
-	if (handle->ops && handle->ops->destroy)
-		handle->ops->destroy(handle);
-	__handle_free(handle);
+	handle->ops->destroy(handle);
 }
 
 void handle_incref(handle_t *handle)
@@ -95,7 +78,7 @@ void handle_decref(handle_t *handle)
 void handle_close(handle_t *handle)
 {
 	DEBUG_ASSERT(handle);
-	if (handle->ops && handle->ops->shutdown)
+	if (handle->ops->shutdown)
 		handle->ops->shutdown(handle);
 	handle_decref(handle);
 }
