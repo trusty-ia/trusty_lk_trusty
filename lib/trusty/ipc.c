@@ -109,7 +109,7 @@ int ipc_port_create(const uuid_t *sid, const char *path,
 
 	if (!num_recv_bufs || num_recv_bufs > IPC_CHAN_MAX_BUFS ||
 	    !recv_buf_size || recv_buf_size > IPC_CHAN_MAX_BUF_SIZE) {
-		LTRACEF("Invalid buffer sizes: %d x %ld\n",
+		LTRACEF("Invalid buffer sizes: %d x %zd\n",
 		        num_recv_bufs, recv_buf_size);
 		return ERR_INVALID_ARGS;
 	}
