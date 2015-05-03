@@ -685,11 +685,6 @@ static void handle_tx(struct tipc_dev *dev)
 			      __func__, ret);
 		}
 
-		if (ret == 0) {
-			/* nothing to do */
-			continue;
-		}
-
 		DEBUG_ASSERT(chan);
 		DEBUG_ASSERT(ipc_is_channel(chan));
 

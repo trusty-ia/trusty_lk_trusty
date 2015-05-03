@@ -299,8 +299,8 @@ long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
 
 	ret = handle_wait(handle, &tmp_event.event,
 		          timeout_msecs);
-	if (ret <= 0) {
-		/* en error or no events (timeout) */
+	if (ret < 0) {
+		/* an error or no events (timeout) */
 		goto out;
 	}
 
@@ -342,7 +342,7 @@ long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
 	 */
 	ret = handle_list_wait(&ctx->handle_list, &handle, &tmp_event.event,
 			       timeout_msecs);
-	if (ret <= 0) {
+	if (ret < 0) {
 		/* an error or no events (timeout) */
 		goto out;
 	}

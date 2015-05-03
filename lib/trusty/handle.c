@@ -51,7 +51,6 @@ void handle_init(handle_t *handle, struct handle_ops *ops)
 	handle->wait_event = NULL;
 	mutex_init(&handle->wait_event_lock);
 	handle->cookie = NULL;
-	list_clear_node(&handle->waiter_node);
 	list_clear_node(&handle->hlist_node);
 }
 
@@ -109,20 +108,16 @@ static int _prepare_wait_handle(event_t *ev, handle_t *handle)
 	return ret;
 }
 
-static void _finish_wait_handle(event_t *ev, handle_t *handle)
+static void _finish_wait_handle(handle_t *handle)
 {
 	/* clear out our event ptr */
 	mutex_acquire(&handle->wait_event_lock);
-	if (unlikely(handle->wait_event != ev))
-		TRACEF("handle %p stolen in wait!! %p != %p\n", handle,
-		       handle->wait_event, ev);
 	handle->wait_event = NULL;
 	mutex_release(&handle->wait_event_lock);
 }
 
 int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 {
-	status_t status;
 	uint32_t event;
 	event_t ev;
 	int ret = 0;
@@ -138,37 +133,22 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 		goto err_prepare_wait;
 	}
 
-	event = handle->ops->poll(handle);
-	if (event) {
-		if (handle->ops->finalize_event)
-			handle->ops->finalize_event(handle, event);
-		ret = 1;
-		goto got_event;
-	} else if (timeout == 0) {
-		ret = 0;
-		goto err_timed_out;
+	while (true) {
+		event = handle->ops->poll(handle);
+		if (event)
+			break;
+		ret = __do_wait(&ev, timeout);
+		if (ret < 0)
+			goto finish_wait;
 	}
 
-	status = __do_wait(&ev, timeout);
-
-	event = handle->ops->poll(handle);
-	if (event) {
-		if (handle->ops->finalize_event)
-			handle->ops->finalize_event(handle, event);
-		ret = 1;
-		goto got_event;
-	} else if (status == ERR_TIMED_OUT) {
-		ret = 0;
-		goto err_timed_out;
-	}
-
-	LTRACEF("%s: error waiting %d\n", __func__, status);
-	ret = ERR_IO;
-
-got_event:
+	if (handle->ops->finalize_event)
+		handle->ops->finalize_event(handle, event);
 	*handle_event = event;
-err_timed_out:
-	_finish_wait_handle(&ev, handle);
+	ret = NO_ERROR;
+
+finish_wait:
+	_finish_wait_handle(handle);
 err_prepare_wait:
 	event_destroy(&ev);
 	return ret;
@@ -214,7 +194,20 @@ static void _handle_list_del_locked(handle_list_t *hlist, handle_t *handle)
 	DEBUG_ASSERT(handle);
 	DEBUG_ASSERT(list_in_list(&handle->hlist_node));
 
+	/* remove item from list */
 	list_delete(&handle->hlist_node);
+
+	/* check if somebody is waiting on this handle */
+	mutex_acquire(&handle->wait_event_lock);
+	if (handle->wait_event) {
+		if (list_is_empty(&hlist->handles)) {
+			/* wakeup waiter if list is now empty */
+			event_signal(handle->wait_event, true);
+		}
+		handle->wait_event = NULL;
+	}
+	mutex_release(&handle->wait_event_lock);
+
 	handle_decref(handle);
 }
 
@@ -243,19 +236,69 @@ void handle_list_delete_all(handle_list_t *hlist)
 	mutex_release(&hlist->lock);
 }
 
+/*
+ *  Iterate handle list and call finish_wait for each item until the last one
+ *  (inclusive) specified by corresponding function parameter. If the last item
+ *  is not specified, iterate the whole list.
+ */
+static void _hlist_finish_wait_locked(handle_list_t *hlist, handle_t *last)
+{
+	handle_t *handle;
+	list_for_every_entry(&hlist->handles, handle, handle_t, hlist_node) {
+		_finish_wait_handle(handle);
+		if (handle == last)
+			break;
+	}
+}
+
+/*
+ *  Iterate handle list and call prepare wait (if required) and poll for each
+ *  handle until the ready one is found and return it to caller.
+ *  Undo prepare op if ready handle is found or en error occured.
+ */
+static int _hlist_do_poll_locked(event_t *ev, handle_list_t *hlist,
+				 handle_t **handle_ptr, uint32_t *event_ptr,
+				 bool prepare)
+{
+	int ret;
+
+	if (list_is_empty(&hlist->handles))
+		return ERR_NOT_FOUND;  /* no handles in the list */
+
+	handle_t *next;
+	handle_t *last_prep = NULL;
+	list_for_every_entry(&hlist->handles, next, handle_t, hlist_node) {
+		if (prepare) {
+			ret = _prepare_wait_handle(ev, next);
+			if (ret)
+				break;
+			last_prep = next;
+		}
+
+		uint32_t event = next->ops->poll(next);
+		if (event) {
+			*event_ptr = event;
+			*handle_ptr = next;
+			ret = 1;
+			break;
+		}
+	}
+
+	if (ret && prepare && last_prep) {
+		/* need to undo prepare */
+		_hlist_finish_wait_locked(hlist, last_prep);
+	}
+	return ret;
+}
+
 /* fills in the handle that has a pending event. The reference taken by the list
  * is not dropped until the caller has had a chance to process the handle.
  */
 int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
                      uint32_t *event_ptr, lk_time_t timeout)
 {
-	handle_t *handle;
-	handle_t *tmp;
-	int ret = 0;
-	struct list_node wait_handles = LIST_INITIAL_VALUE(wait_handles);
+	int ret;
 	event_t ev;
-	int num_ready = 0;
-	uint32_t event;
 
 	DEBUG_ASSERT(hlist);
 	DEBUG_ASSERT(handle_ptr);
@@ -267,84 +310,49 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 	*handle_ptr = 0;
 
 	mutex_acquire(&hlist->lock);
-	list_for_every_entry(&hlist->handles, handle, handle_t, hlist_node) {
-		/* this should NEVER happen! the handle can't already
-		 * be on a poll list
-		 */
-		DEBUG_ASSERT(!list_in_list(&handle->waiter_node));
 
-		if (timeout) {
-			ret = _prepare_wait_handle(&ev, handle);
-			if (ret) {
-				mutex_release(&hlist->lock);
-				goto err_prepare_wait;
-			}
+	ret = _hlist_do_poll_locked(&ev, hlist,
+				    handle_ptr, event_ptr,
+				    true);
+	if (ret < 0)
+		goto err_do_poll;
 
-			list_add_tail(&wait_handles, &handle->waiter_node);
-			handle_incref(handle);
-		}
+	if (ret == 0) {
+		/* no handles ready */
+		do {
+			mutex_release(&hlist->lock);
+			ret = __do_wait(&ev, timeout);
+			mutex_acquire(&hlist->lock);
 
-		/* We need to do this *after* adding the event ptr to the
-		 * handle. If we did it before then it would have been possible
-		 * for someone to signal the handle just after the poll, which
-		 * would mean that we'd have nothing to notify later and wait
-		 * forever.
-		 */
-		event = handle->ops->poll(handle);
-		if (event) {
-			LTRACEF("got event 0x%x on %p\n", event, handle);
-			num_ready++;
-			if (*handle_ptr == 0) {
-				if (handle->ops->finalize_event)
-					handle->ops->finalize_event(handle, event);
-				handle_incref(handle);
-				*handle_ptr = handle;
-				*event_ptr = event;
-			}
-		}
+			if (ret < 0)
+				break;
+
+			/* poll again */
+			ret = _hlist_do_poll_locked(&ev, hlist,
+						    handle_ptr, event_ptr,
+						    false);
+		} while (!ret);
+
+		_hlist_finish_wait_locked(hlist, NULL);
 	}
+
+	if (ret == 1) {
+		handle_t *handle = *handle_ptr;
+
+		if (handle->ops->finalize_event)
+			handle->ops->finalize_event(handle, *event_ptr);
+
+		handle_incref(handle);
+
+		/* move list head after item we just found */
+		list_delete(&hlist->handles);
+		list_add_head(&handle->hlist_node, &hlist->handles);
+
+		ret = NO_ERROR;
+	}
+
+err_do_poll:
 	mutex_release(&hlist->lock);
-
-	if (num_ready || !timeout) {
-		ret = num_ready;
-		goto cleanup;
-	} else if (list_is_empty(&wait_handles)) {
-		/* nothing to do? no handles? */
-		ret = ERR_NOT_FOUND;
-		goto cleanup;
-	}
-
-	/* assume that this will only return when timeout has expired or someone
-	 * woke us up with an event
-	 */
-	__do_wait(&ev, timeout);
-
-	list_for_every_entry(&wait_handles, handle, handle_t, waiter_node) {
-		event = handle->ops->poll(handle);
-		if (event) {
-			LTRACEF("got event 0x%x on %p\n", event, handle);
-			num_ready++;
-			if (*handle_ptr == 0) {
-				if (handle->ops->finalize_event)
-					handle->ops->finalize_event(handle, event);
-				handle_incref(handle);
-				*handle_ptr = handle;
-				*event_ptr = event;
-			}
-		}
-	}
-	ret = num_ready;
-
-err_prepare_wait:
-cleanup:
-	list_for_every_entry_safe(&wait_handles, handle, tmp, handle_t,
-				  waiter_node) {
-		if (timeout) {
-			list_delete(&handle->waiter_node);
-			_finish_wait_handle(&ev, handle);
-			handle_decref(handle);
-		}
-	}
 	event_destroy(&ev);
 	return ret;
 }

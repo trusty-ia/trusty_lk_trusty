@@ -639,7 +639,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 
 	mutex_acquire(&ipc_lock);
 
-	if (ret < 0) {
+	if (ret < 0 && ret != ERR_TIMED_OUT) {
 		/* The only reason it could happen besides memory corruption
 		 * is if someone is waiting on client handle in context of the
 		 * other thread which is a gross non user task programming error.
@@ -647,8 +647,8 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 		panic ("failed (%d) to wait for connection\n", ret);
 	}
 
-	if (ret == 0 || !(client_event & IPC_HANDLE_POLL_READY)) {
-		/* it is either server timed out (ret == 0) or
+	if (ret == ERR_TIMED_OUT || !(client_event & IPC_HANDLE_POLL_READY)) {
+		/* it is either server timed out or
 		   peer channel is not in connected state (maybe server closed
 		   or refused to accept connection). */
 		LTRACEF("error while waiting for server (ret %d event=0x%x)\n",
@@ -660,10 +660,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 		/* destroy client channel. server channel will be destroyed by server */
 		handle_decref(&client->handle);
 
-		if (ret == 0) {
-			/* server failed to respond in time */
-			ret = ERR_TIMED_OUT;
-		} else {
+		if (ret != ERR_TIMED_OUT) {
 			if (client_event & IPC_HANDLE_POLL_HUP) {
 				/* connection closed by peer */
 				ret = ERR_CHANNEL_CLOSED;
