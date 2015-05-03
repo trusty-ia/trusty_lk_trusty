@@ -685,7 +685,8 @@ int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
 		return ERR_INVALID_ARGS;
 	}
 
-	if (strnlen(path, max_path) >= max_path) {
+	size_t len = strnlen(path, max_path);
+	if (len == 0 || len >= max_path) {
 		/* unterminated string */
 		LTRACEF("invalid path specified\n");
 		return ERR_INVALID_ARGS;
