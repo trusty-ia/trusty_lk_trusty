@@ -175,8 +175,10 @@ static void port_shutdown(handle_t *phandle)
 	port->state = IPC_PORT_STATE_CLOSING;
 
 	/* detach it from global list if it is in the list */
-	if (list_in_list(&port->node))
+	if (list_in_list(&port->node)) {
 		list_delete(&port->node);
+		handle_decref(phandle);
+	}
 
 	/* tear down pending connections */
 	ipc_chan_t *server = list_remove_head_type(&port->pending_list,
@@ -247,6 +249,8 @@ static int ipc_port_publish(handle_t *phandle)
 	} else {
 		port->state = IPC_PORT_STATE_LISTENING;
 		list_add_tail(&ipc_port_list, &port->node);
+		handle_incref(&port->handle); /* and inc usage count */
+
 		/* kick all threads that are waiting for services */
 		event_signal(&srv_event, false);
 		event_unsignal(&srv_event);
