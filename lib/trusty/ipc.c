@@ -745,7 +745,12 @@ err_find_ports:
 }
 
 /* returns handle id for the new channel */
-long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
+
+#ifndef DEFAULT_IPC_CONNECT_WARN_TIMEOUT
+#define DEFAULT_IPC_CONNECT_WARN_TIMEOUT   INFINITE_TIME
+#endif
+
+long __SYSCALL sys_connect(user_addr_t path, uint flags)
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
@@ -754,6 +759,11 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 	char tmp_path[IPC_PORT_PATH_MAX];
 	int ret;
 	handle_id_t handle_id;
+
+	if (flags & ~IPC_CONNECT_MASK) {
+		/* unsupported flags specified */
+		return ERR_INVALID_ARGS;
+	}
 
 	ret = (int) strncpy_from_user(tmp_path, path, sizeof(tmp_path));
 	if (ret < 0)
@@ -764,31 +774,39 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 
 	ret = ipc_port_connect_async(&tapp->props.uuid,
 				     tmp_path, sizeof(tmp_path),
-				     timeout_msecs ? IPC_CONNECT_WAIT_FOR_PORT : 0,
-				     &chandle);
+				     flags, &chandle);
 	if (ret != NO_ERROR)
 		return (long) ret;
 
-	uint32_t event;
-	ret = handle_wait(chandle, &event, timeout_msecs);
-	if (ret < 0) {
-		/* timeout or other error */
-		handle_close(chandle);
-		return ret;
-	}
+	if (!(flags & IPC_CONNECT_ASYNC)) {
+		uint32_t event;
+		lk_time_t timeout_msecs = DEFAULT_IPC_CONNECT_WARN_TIMEOUT;
 
-	if ((event & IPC_HANDLE_POLL_HUP) &&
-	    !(event & IPC_HANDLE_POLL_MSG)) {
-		/* hangup and no pending messages */
-		handle_close(chandle);
-		return ERR_CHANNEL_CLOSED;
-	}
+		ret = handle_wait(chandle, &event, timeout_msecs);
+		if (ret == ERR_TIMED_OUT) {
+			TRACEF("Timedout connecting to %s\n", tmp_path);
+			ret = handle_wait(chandle, &event, INFINITE_TIME);
+		}
 
-	if (!(event & IPC_HANDLE_POLL_READY)) {
-		/* not connected */
-		TRACEF("Unexpected channel state: event = 0x%x\n", event);
-		handle_close(chandle);
-		return ERR_NOT_READY;
+		if (ret < 0) {
+			/* timeout or other error */
+			handle_close(chandle);
+			return ret;
+		}
+
+		if ((event & IPC_HANDLE_POLL_HUP) &&
+		    !(event & IPC_HANDLE_POLL_MSG)) {
+			/* hangup and no pending messages */
+			handle_close(chandle);
+			return ERR_CHANNEL_CLOSED;
+		}
+
+		if (!(event & IPC_HANDLE_POLL_READY)) {
+			/* not connected */
+			TRACEF("Unexpected channel state: event = 0x%x\n", event);
+			handle_close(chandle);
+			return ERR_NOT_READY;
+		}
 	}
 
 	ret = uctx_handle_install(ctx, chandle, &handle_id);
@@ -935,7 +953,7 @@ long __SYSCALL sys_port_create(user_addr_t path, uint num_recv_bufs,
 	return (long) ERR_NOT_SUPPORTED;
 }
 
-long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
+long __SYSCALL sys_connect(user_addr_t path, uint flags)
 {
 	return (long) ERR_NOT_SUPPORTED;
 }

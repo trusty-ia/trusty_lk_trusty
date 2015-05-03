@@ -138,6 +138,9 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 /* client requests a connection to a port */
 enum {
 	IPC_CONNECT_WAIT_FOR_PORT = 0x1,
+	IPC_CONNECT_ASYNC = 0x2,
+	IPC_CONNECT_MASK = IPC_CONNECT_WAIT_FOR_PORT
+			 | IPC_CONNECT_ASYNC,
 };
 int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
 			   uint flags, handle_t **chandle_ptr);
