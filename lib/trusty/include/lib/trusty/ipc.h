@@ -27,6 +27,7 @@
 #include <bits.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
+#include <reflist.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -82,12 +83,15 @@ enum {
 enum {
 	IPC_CHAN_AUX_STATE_SEND_BLOCKED = 0x1,
 	IPC_CHAN_AUX_STATE_SEND_UNBLOCKED = 0x2,
+	IPC_CHAN_AUX_STATE_CONNECTED = 0x4,
 };
 
 #define IPC_CHAN_MAX_BUFS	32
 #define IPC_CHAN_MAX_BUF_SIZE	4096
 
 typedef struct ipc_chan {
+	obj_t			refobj;
+	obj_ref_t		peer_ref;
 	struct ipc_chan		*peer;
 	const struct uuid	*uuid;
 
@@ -95,9 +99,20 @@ typedef struct ipc_chan {
 	uint32_t		flags;
 	uint32_t		aux_state;
 
+	/* handle_ref is a self reference when there are
+	 * outstanding handles out there. It is removed
+	 * when last handle ref goes away.
+	 */
+	obj_ref_t		handle_ref;
 	handle_t		handle;
 
-	/* used for port's pending list */
+	/* used for port's pending list. node_ref field is a
+	 * self reference when node field is inserted in the list.
+	 *
+	 * TODO: consider creating generic solution by grouping
+	 * together list_node and obj_ref_t into single struct.
+	 */
+	obj_ref_t		node_ref;
 	struct list_node	node;
 
 	ipc_msg_queue_t		*msg_queue;

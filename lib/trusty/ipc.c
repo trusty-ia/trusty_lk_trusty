@@ -47,6 +47,8 @@
 #include <lib/trusty/uctx.h>
 #include <lib/trusty/tipc_dev.h>
 
+#include <reflist.h>
+
 static struct list_node ipc_port_list = LIST_INITIAL_VALUE(ipc_port_list);
 
 mutex_t ipc_lock = MUTEX_INITIAL_VALUE(ipc_lock);
@@ -63,7 +65,10 @@ static void chan_shutdown(handle_t *handle);
 static void chan_handle_destroy(handle_t *handle);
 
 static ipc_port_t *port_find_locked(const char *path);
+static int port_attach_client(ipc_port_t *port, ipc_chan_t *client);
 static void chan_shutdown_locked(ipc_chan_t *chan);
+static void chan_add_ref(ipc_chan_t *conn, obj_ref_t *ref);
+static void chan_del_ref(ipc_chan_t *conn, obj_ref_t *ref);
 
 static struct handle_ops ipc_port_handle_ops = {
 	.poll		= port_poll,
@@ -181,24 +186,22 @@ static void port_shutdown(handle_t *phandle)
 	}
 
 	/* tear down pending connections */
-	ipc_chan_t *server = list_remove_head_type(&port->pending_list,
-	                                           ipc_chan_t, node);
-	while (server) {
+	ipc_chan_t *server, *temp;
+	list_for_every_entry_safe(&port->pending_list, server, temp, ipc_chan_t, node) {
 		/* pending server channel in not in user context table
 		   so we can just call shutdown and delete it. Client
 		   side will be deleted  by the other side
 		 */
 		chan_shutdown_locked(server);
-		handle_decref(&server->handle);
+
+		/* remove connection from the list */
+		list_delete(&server->node);
+		chan_del_ref(server, &server->node_ref); /* drop list ref */
 
 		/* decrement usage count on port as pending connection
 		   is gone
 		 */
 		handle_decref(phandle);
-
-		/* get next pending connection */
-		server = list_remove_head_type(&port->pending_list,
-		                                ipc_chan_t, node);
 	}
 
 	mutex_release(&ipc_lock);
@@ -349,52 +352,98 @@ static uint32_t port_poll(handle_t *phandle)
 }
 
 /*
+ *  Channel ref counting
+ */
+static inline void __chan_destroy_refobj(obj_t *ref)
+{
+	ipc_chan_t *chan = containerof(ref, ipc_chan_t, refobj);
+
+	/* should not point to peer */
+	ASSERT(chan->peer == NULL);
+
+	/* should not be in a list  */
+	ASSERT(!list_in_list(&chan->node));
+
+	if (chan->msg_queue) {
+		ipc_msg_queue_destroy(chan->msg_queue);
+		chan->msg_queue = NULL;
+	}
+	free(chan);
+}
+
+static inline void chan_add_ref(ipc_chan_t *chan, obj_ref_t *ref)
+{
+	obj_add_ref(&chan->refobj, ref);
+}
+
+static inline void chan_del_ref(ipc_chan_t *chan, obj_ref_t *ref)
+{
+	obj_del_ref(&chan->refobj, ref, __chan_destroy_refobj);
+}
+
+/*
+ *   Initialize channel handle
+ */
+static inline handle_t *chan_handle_init(ipc_chan_t *chan)
+{
+	handle_init(&chan->handle, &ipc_chan_handle_ops);
+	chan_add_ref(chan, &chan->handle_ref);
+	return &chan->handle;
+}
+
+/*
  *  Allocate and initialize new channel.
  */
-static ipc_chan_t *chan_alloc(uint32_t init_state, uint32_t flags,
-                              uint num_bufs, size_t buf_size)
+static ipc_chan_t *chan_alloc(uint32_t flags, const uuid_t *uuid,
+			      obj_ref_t *ref)
 {
 	ipc_chan_t *chan;
-	int ret;
 
 	chan = calloc(1, sizeof(ipc_chan_t));
-	if (!chan) {
-		TRACEF("cannot allocate memory for channel\n");
+	if (!chan)
 		return NULL;
-	}
 
-	ret = ipc_msg_queue_create(num_bufs, buf_size, &chan->msg_queue);
-	if (ret != NO_ERROR)
-		goto err_mq_init;
+	/* init ref count */
+	obj_init(&chan->refobj, ref);
 
-	chan->state = init_state;
+	/* init refs */
+	obj_ref_init(&chan->node_ref);
+	obj_ref_init(&chan->peer_ref);
+	obj_ref_init(&chan->handle_ref);
+
+	chan->uuid  = uuid;
+	chan->state = IPC_CHAN_STATE_INVALID;
 	chan->flags = flags;
 
-	handle_init(&chan->handle, &ipc_chan_handle_ops);
-
 	return chan;
+}
 
-err_mq_init:
-	free(chan);
-	return NULL;
+static void _chan_shutdown_locked(ipc_chan_t *chan)
+{
+	switch (chan->state) {
+	case IPC_CHAN_STATE_CONNECTED:
+	case IPC_CHAN_STATE_CONNECTING:
+		chan->state = IPC_CHAN_STATE_DISCONNECTING;
+		handle_notify(&chan->handle);
+		break;
+	case IPC_CHAN_STATE_ACCEPTING:
+		chan->state = IPC_CHAN_STATE_DISCONNECTING;
+		break;
+	default:
+		/* no op */
+		break;
+	}
 }
 
 static void chan_shutdown_locked(ipc_chan_t *chan)
 {
 	LTRACEF("chan %p: peer %p\n", chan, chan->peer);
 
-	if (chan->state == IPC_CHAN_STATE_DISCONNECTING)
-		return;
-
-	chan->state = IPC_CHAN_STATE_DISCONNECTING;
-	handle_notify(&chan->handle);
-
-	ipc_chan_t *peer = chan->peer;
-	if (peer) {
-		peer->state = IPC_CHAN_STATE_DISCONNECTING;
-		peer->peer = NULL;
+	_chan_shutdown_locked(chan);
+	if (chan->peer) {
+		_chan_shutdown_locked(chan->peer);
+		chan_del_ref(chan->peer, &chan->peer_ref);
 		chan->peer = NULL;
-		handle_notify(&peer->handle);
 	}
 }
 
@@ -421,17 +470,9 @@ static void chan_handle_destroy(handle_t *chandle)
 	DEBUG_ASSERT(ipc_is_channel(chandle));
 
 	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
-
-	LTRACEF("chan = %p\n", chan);
-
-	/* should not point to peer */
-	DEBUG_ASSERT(chan->peer == NULL);
-
-	if (chan->msg_queue) {
-		ipc_msg_queue_destroy(chan->msg_queue);
-		chan->msg_queue = NULL;
-	}
-	free(chan);
+	mutex_acquire(&ipc_lock);
+	chan_del_ref(chan, &chan->handle_ref);
+	mutex_release(&ipc_lock);
 }
 
 /*
@@ -456,19 +497,18 @@ static uint32_t chan_poll(handle_t *chandle)
 	}
 
 	/*  peer is closing connection */
-	if (chan->state == IPC_CHAN_STATE_DISCONNECTING || chan->peer == NULL) {
+	if (chan->state == IPC_CHAN_STATE_DISCONNECTING) {
 		events |= IPC_HANDLE_POLL_HUP;
 	}
 
 	/* server accepted our connection */
-	if (chan->state == IPC_CHAN_STATE_CONNECTING &&
-	    chan->peer->state == IPC_CHAN_STATE_CONNECTED) {
+	if (chan->aux_state & IPC_CHAN_AUX_STATE_CONNECTED) {
 		events |= IPC_HANDLE_POLL_READY;
 	}
 
 	/* have a pending message? */
-	if (!ipc_msg_queue_is_empty(chan->msg_queue)) {
-		events |= IPC_HANDLE_POLL_READY | IPC_HANDLE_POLL_MSG;
+	if (chan->msg_queue && !ipc_msg_queue_is_empty(chan->msg_queue)) {
+		events |= IPC_HANDLE_POLL_MSG;
 	}
 
 	/* check if we were send blocked */
@@ -486,10 +526,13 @@ static void chan_finalize_event(handle_t *chandle, uint32_t event)
 	DEBUG_ASSERT(chandle);
 	DEBUG_ASSERT(ipc_is_channel(chandle));
 
-	if (event & IPC_HANDLE_POLL_SEND_UNBLOCKED) {
+	if (event & (IPC_HANDLE_POLL_SEND_UNBLOCKED | IPC_HANDLE_POLL_READY)) {
 		mutex_acquire(&ipc_lock);
 		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
-		chan->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
+		if (event & IPC_HANDLE_POLL_SEND_UNBLOCKED)
+			chan->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
+		if (event & IPC_HANDLE_POLL_READY)
+			chan->aux_state &= ~IPC_CHAN_AUX_STATE_CONNECTED;
 		mutex_release(&ipc_lock);
 	}
 }
@@ -544,6 +587,82 @@ static int check_access(ipc_port_t *port, const uuid_t *uuid)
 	return ERR_ACCESS_DENIED;
 }
 
+static int port_attach_client(ipc_port_t *port, ipc_chan_t *client)
+{
+	int ret;
+	ipc_chan_t *server;
+	obj_ref_t   tmp_server_ref = OBJ_REF_INITIAL_VALUE(tmp_server_ref);
+
+	if (port->state != IPC_PORT_STATE_LISTENING) {
+		LTRACEF("port %s is not in listening state (%d)\n",
+			 port->path, port->state);
+		return ERR_NOT_READY;
+	}
+
+	/* check if we are allowed to connect */
+	ret = check_access(port, client->uuid);
+	if (ret != NO_ERROR) {
+		LTRACEF("access denied: %d\n", ret);
+		return ret;
+	}
+
+	server = chan_alloc(IPC_CHAN_FLAG_SERVER, port->uuid, &tmp_server_ref);
+	if (!server) {
+		LTRACEF("failed to alloc server: %d\n", ret);
+		return ERR_NO_MEMORY;
+	}
+
+	/* allocate msg queues */
+	ret = ipc_msg_queue_create(port->num_recv_bufs,
+				   port->recv_buf_size,
+				   &client->msg_queue);
+	if (ret != NO_ERROR) {
+		LTRACEF("failed to alloc mq: %d\n", ret);
+		goto err_client_mq;
+	}
+
+	ret = ipc_msg_queue_create(port->num_recv_bufs,
+				   port->recv_buf_size,
+				   &server->msg_queue);
+	if (ret != NO_ERROR) {
+		LTRACEF("failed to alloc mq: %d\n", ret);
+		goto err_server_mq;
+	}
+
+	/* move server to accepting state */
+	server->state = IPC_CHAN_STATE_ACCEPTING;
+
+	/* move client to connecting state  */
+	client->state = IPC_CHAN_STATE_CONNECTING;
+
+	/* setup peer refs */
+	chan_add_ref(server, &client->peer_ref);
+	client->peer = server;
+
+	chan_add_ref(client, &server->peer_ref);
+	server->peer = client;
+
+	/* and add server channel to pending connection list */
+	chan_add_ref(server, &server->node_ref);
+	list_add_tail(&port->pending_list, &server->node);
+
+	/* bump a ref to the port while there's a pending connection */
+	handle_incref(&port->handle);
+
+	/* Notify port that there is a pending connection */
+	handle_notify(&port->handle);
+
+	chan_del_ref(server, &tmp_server_ref);
+	return NO_ERROR;
+
+err_server_mq:
+	ipc_msg_queue_destroy(client->msg_queue);
+	client->msg_queue = NULL;
+err_client_mq:
+	chan_del_ref(server, &tmp_server_ref);
+	return ERR_NO_MEMORY;
+}
+
 /*
  * Client requests a connection to a port. It can be called in context
  * of user task as well as vdev RX thread.
@@ -552,8 +671,9 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
                      lk_time_t timeout, handle_t **chandle_ptr)
 {
 	ipc_port_t *port;
-	ipc_chan_t *client = NULL;
-	ipc_chan_t *server = NULL;
+	ipc_chan_t *client;
+	handle_t *hclient = NULL;
+	obj_ref_t   tmp_client_ref = OBJ_REF_INITIAL_VALUE(tmp_client_ref);
 	int ret;
 	uint32_t client_event = 0;
 
@@ -570,6 +690,13 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 	}
 	/* After this point path is zero terminated */
 
+	/* allocate channel pair */
+	client = chan_alloc(0, cid, &tmp_client_ref);
+	if (!client) {
+		LTRACEF("failed to alloc client\n");
+		return ERR_NO_MEMORY;
+	}
+
 	LTRACEF("Connecting to '%s'\n", path);
 
 	mutex_acquire(&ipc_lock);
@@ -582,56 +709,16 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 		goto err_find_ports;
 	}
 
-	/* found  */
-	if (port->state != IPC_PORT_STATE_LISTENING) {
-		LTRACEF("port %s is not in listening state (%d)\n",
-		         path, port->state);
-		ret = ERR_NOT_READY;
-		goto err_state;
+	ret = port_attach_client(port, client);
+	if (ret) {
+		goto err_attach_client;
 	}
 
-	/* check if we are allowed to connect */
-	ret = check_access(port, cid);
-	if (ret != NO_ERROR) {
-		LTRACEF("access denied: %d\n", ret);
-		goto err_access;
-	}
+	/* initialize client handle */
+	hclient = chan_handle_init(client);
 
-	/* allocate client channel */
-	client = chan_alloc(IPC_CHAN_STATE_CONNECTING, 0,
-			    port->num_recv_bufs, port->recv_buf_size);
-	if (!client) {
-		ret = ERR_NO_MEMORY;
-		goto err_chan_alloc;
-	}
-
-	/* allocate server channel */
-	server = chan_alloc(IPC_CHAN_STATE_ACCEPTING, IPC_CHAN_FLAG_SERVER,
-			    port->num_recv_bufs, port->recv_buf_size);
-	if (!server) {
-		handle_decref(&client->handle);
-		ret = ERR_NO_MEMORY;
-		goto err_chan_alloc;
-	}
-
-	/* attach identity */
-	client->uuid = cid;
-	server->uuid = port->uuid;
-
-	/* tie them together */
-	client->peer = server;
-	server->peer = client;
-
-	LTRACEF("new connection: client %p: peer %p\n", client, server);
-
-	/* and add them to pending connection list */
-	list_add_tail(&port->pending_list, &server->node);
-
-	/* bump a ref to the port while there's a pending connection */
-	handle_incref(&port->handle);
-
-	/* Notify port that there is a pending connection */
-	handle_notify(&port->handle);
+	LTRACEF("new connection: client %p: peer %p\n",
+		client, client->peer);
 
 	mutex_release(&ipc_lock);
 
@@ -639,7 +726,7 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 	/* TODO: should we figure out how to not wait here but wait
 	 * for an event later?
 	 */
-	ret = handle_wait(&client->handle, &client_event, timeout);
+	ret = handle_wait(hclient, &client_event, timeout);
 
 	mutex_acquire(&ipc_lock);
 
@@ -658,12 +745,6 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 		LTRACEF("error while waiting for server (ret %d event=0x%x)\n",
 			ret, client_event);
 
-		/* tear down connection  */
-		chan_shutdown_locked (client);
-
-		/* destroy client channel. server channel will be destroyed by server */
-		handle_decref(&client->handle);
-
 		if (ret != ERR_TIMED_OUT) {
 			if (client_event & IPC_HANDLE_POLL_HUP) {
 				/* connection closed by peer */
@@ -678,20 +759,17 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 	}
 
 	/* success */
-	client->state = IPC_CHAN_STATE_CONNECTED;
-
-	mutex_release(&ipc_lock);
-
-	*chandle_ptr = &client->handle;
-
-	return NO_ERROR;
+	*chandle_ptr = hclient;
+	ret = NO_ERROR;
 
 err_wait:
-err_chan_alloc:
-err_access:
-err_state:
+err_attach_client:
 err_find_ports:
+	chan_del_ref(client, &tmp_client_ref);
 	mutex_release(&ipc_lock);
+	if (ret && hclient) {
+		handle_close(hclient);
+	}
 	return ret;
 }
 
@@ -737,6 +815,7 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 	ipc_port_t *port;
 	ipc_chan_t *server = NULL;
 	ipc_chan_t *client = NULL;
+	obj_ref_t tmp_server_ref = OBJ_REF_INITIAL_VALUE(tmp_server_ref);
 	int ret = NO_ERROR;
 
 	DEBUG_ASSERT(chandle_ptr);
@@ -756,7 +835,7 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 		 * is it really possible to get here?
 		 */
 		ret = ERR_CHANNEL_CLOSED;
-		goto err;
+		goto err_bad_port_state;
 	}
 
 	/* get next pending connection */
@@ -766,11 +845,14 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 		 * is not pending? if so, need an optional argument maybe.
 		 */
 		ret = ERR_NO_MSG;
-		goto err;
+		goto err_no_connections;
 	}
 
 	/* it must be a server side channel */
 	DEBUG_ASSERT(server->flags & IPC_CHAN_FLAG_SERVER);
+
+	chan_add_ref(server, &tmp_server_ref);  /* add local ref */
+	chan_del_ref(server, &server->node_ref);  /* drop list ref */
 
 	/* drop the ref to port we took in connect() */
 	handle_decref(&port->handle);
@@ -786,24 +868,29 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 			client, client ? client->state : 0xDEADBEEF,
 			server, server->state);
 		chan_shutdown_locked(server);
-		handle_decref(&server->handle);
 		ret = ERR_CHANNEL_CLOSED;
-		goto err;
+		goto err_bad_chan_state;
 	}
 
+	/* move both client and server into connected state */
 	server->state = IPC_CHAN_STATE_CONNECTED;
-	/* Note: we let client transition itself, so it can poll on this
-	 * condition
-	 */
-	handle_notify(&client->handle);
+	client->state = IPC_CHAN_STATE_CONNECTED;
+	client->aux_state |= IPC_CHAN_AUX_STATE_CONNECTED;
 
-	*chandle_ptr = &server->handle;
+	/* init server channel handle and return it to caller */
+	*chandle_ptr = chan_handle_init(server);
 	*uuid_ptr = client->uuid;
 
-	ret = NO_ERROR;
-err:
-	mutex_release(&ipc_lock);
+	/* notify client */
+	handle_notify(&client->handle);
 
+	ret = NO_ERROR;
+
+err_bad_chan_state:
+	chan_del_ref(server, &tmp_server_ref);
+err_no_connections:
+err_bad_port_state:
+	mutex_release(&ipc_lock);
 	return ret;
 }
 
