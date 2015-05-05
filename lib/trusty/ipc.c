@@ -49,11 +49,11 @@
 
 #include <reflist.h>
 
+static struct list_node waiting_for_port_chan_list = LIST_INITIAL_VALUE(waiting_for_port_chan_list);
+
 static struct list_node ipc_port_list = LIST_INITIAL_VALUE(ipc_port_list);
 
 mutex_t ipc_lock = MUTEX_INITIAL_VALUE(ipc_lock);
-
-static event_t srv_event = EVENT_INITIAL_VALUE(srv_event, false, 0);
 
 static uint32_t port_poll(handle_t *handle);
 static void port_shutdown(handle_t *handle);
@@ -254,9 +254,32 @@ static int ipc_port_publish(handle_t *phandle)
 		list_add_tail(&ipc_port_list, &port->node);
 		handle_incref(&port->handle); /* and inc usage count */
 
-		/* kick all threads that are waiting for services */
-		event_signal(&srv_event, false);
-		event_unsignal(&srv_event);
+		/* go through pending connection list and pick those we can handle */
+		ipc_chan_t *client, *temp;
+		obj_ref_t tmp_client_ref = OBJ_REF_INITIAL_VALUE(tmp_client_ref);
+		list_for_every_entry_safe(&waiting_for_port_chan_list, client, temp, ipc_chan_t, node) {
+
+			if (strcmp(client->path, port->path))
+				continue;
+
+			free((void *)client->path);
+			client->path = NULL;
+
+			/* take it out of global pending list */
+			chan_add_ref(client, &tmp_client_ref);   /* add local ref */
+			list_delete(&client->node);
+			chan_del_ref(client, &client->node_ref); /* drop list ref */
+
+			/* try to attach port */
+			int err = port_attach_client(port, client);
+			if (err) {
+				/* failed to attach port: close channel */
+				LTRACEF("failed (%d) to attach_port\n", err);
+				chan_shutdown_locked(client);
+			}
+
+			chan_del_ref(client, &tmp_client_ref);   /* drop local ref */
+		}
 	}
 	mutex_release(&ipc_lock);
 
@@ -364,6 +387,9 @@ static inline void __chan_destroy_refobj(obj_t *ref)
 	/* should not be in a list  */
 	ASSERT(!list_in_list(&chan->node));
 
+	if (chan->path)
+		free((void *)chan->path);
+
 	if (chan->msg_queue) {
 		ipc_msg_queue_destroy(chan->msg_queue);
 		chan->msg_queue = NULL;
@@ -425,6 +451,12 @@ static void _chan_shutdown_locked(ipc_chan_t *chan)
 	case IPC_CHAN_STATE_CONNECTING:
 		chan->state = IPC_CHAN_STATE_DISCONNECTING;
 		handle_notify(&chan->handle);
+		break;
+	case IPC_CHAN_STATE_WAITING_FOR_PORT:
+		ASSERT(list_in_list(&chan->node));
+		list_delete(&chan->node);
+		chan_del_ref(chan, &chan->node_ref);
+		chan->state = IPC_CHAN_STATE_DISCONNECTING;
 		break;
 	case IPC_CHAN_STATE_ACCEPTING:
 		chan->state = IPC_CHAN_STATE_DISCONNECTING;
@@ -537,34 +569,6 @@ static void chan_finalize_event(handle_t *chandle, uint32_t event)
 	}
 }
 
-/*
- *  Lookup an existing port or wait for up to specified timeout
- */
-static ipc_port_t *wait_for_port_locked(const char * path, lk_time_t timeout)
-{
-	lk_time_t elapsed = 0;
-	lk_time_t start_ts = current_time();
-
-	for (;;) {
-		ipc_port_t *port = port_find_locked(path);
-		if (port)
-			return port;
-
-		if (elapsed >= timeout)
-			return NULL;
-
-		/* wait for port to become available */
-		mutex_release(&ipc_lock);
-		event_wait_timeout (&srv_event, timeout - elapsed);
-		mutex_acquire(&ipc_lock);
-
-		if (timeout != INFINITE_TIME) {
-			/* keep track of elapsed time */
-			elapsed = current_time() - start_ts;
-		}
-	}
-}
-
 
 /*
  *  Check if connection to specified port is allowed
@@ -667,15 +671,13 @@ err_client_mq:
  * Client requests a connection to a port. It can be called in context
  * of user task as well as vdev RX thread.
  */
-int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
-                     lk_time_t timeout, handle_t **chandle_ptr)
+int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
+			   uint flags, handle_t **chandle_ptr)
 {
 	ipc_port_t *port;
 	ipc_chan_t *client;
-	handle_t *hclient = NULL;
 	obj_ref_t   tmp_client_ref = OBJ_REF_INITIAL_VALUE(tmp_client_ref);
 	int ret;
-	uint32_t client_event = 0;
 
 	if (!cid) {
 		/* client uuid is required */
@@ -701,75 +703,43 @@ int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
 
 	mutex_acquire(&ipc_lock);
 
-	/* lookup an existing port */
-	port = wait_for_port_locked(path, timeout);
-	if (!port) {
-		LTRACEF("cannot find port '%s'\n", path);
-		ret = ERR_NOT_FOUND;
-		goto err_find_ports;
-	}
+	port = port_find_locked(path);
+	if (port) {
+		/* found  */
+		ret = port_attach_client(port, client);
+		if (ret)
+			goto err_attach_client;
+	} else {
+		if (!(flags & IPC_CONNECT_WAIT_FOR_PORT)) {
+			ret = ERR_NOT_FOUND;
+			goto err_find_ports;
+		}
 
-	ret = port_attach_client(port, client);
-	if (ret) {
-		goto err_attach_client;
-	}
+		/* port not found, add connection to waiting_for_port_chan_list */
+		client->path = strdup(path);
+		if (!client->path) {
+			ret = ERR_NO_MEMORY;
+			goto err_alloc_path;
+		}
 
-	/* initialize client handle */
-	hclient = chan_handle_init(client);
+		/* add it to waiting for port list */
+		client->state = IPC_CHAN_STATE_WAITING_FOR_PORT;
+		list_add_tail(&waiting_for_port_chan_list, &client->node);
+		chan_add_ref(client, &client->node_ref);
+	}
 
 	LTRACEF("new connection: client %p: peer %p\n",
 		client, client->peer);
 
-	mutex_release(&ipc_lock);
-
-	/* now we wait for server to accept */
-	/* TODO: should we figure out how to not wait here but wait
-	 * for an event later?
-	 */
-	ret = handle_wait(hclient, &client_event, timeout);
-
-	mutex_acquire(&ipc_lock);
-
-	if (ret < 0 && ret != ERR_TIMED_OUT) {
-		/* The only reason it could happen besides memory corruption
-		 * is if someone is waiting on client handle in context of the
-		 * other thread which is a gross non user task programming error.
-		 */
-		panic ("failed (%d) to wait for connection\n", ret);
-	}
-
-	if (ret == ERR_TIMED_OUT || !(client_event & IPC_HANDLE_POLL_READY)) {
-		/* it is either server timed out or
-		   peer channel is not in connected state (maybe server closed
-		   or refused to accept connection). */
-		LTRACEF("error while waiting for server (ret %d event=0x%x)\n",
-			ret, client_event);
-
-		if (ret != ERR_TIMED_OUT) {
-			if (client_event & IPC_HANDLE_POLL_HUP) {
-				/* connection closed by peer */
-				ret = ERR_CHANNEL_CLOSED;
-			} else {
-				/* port in some sort of error state */
-				ret = ERR_NOT_READY;
-			}
-		}
-
-		goto err_wait;
-	}
-
 	/* success */
-	*chandle_ptr = hclient;
+	*chandle_ptr = chan_handle_init(client);
 	ret = NO_ERROR;
 
-err_wait:
+err_alloc_path:
 err_attach_client:
 err_find_ports:
 	chan_del_ref(client, &tmp_client_ref);
 	mutex_release(&ipc_lock);
-	if (ret && hclient) {
-		handle_close(hclient);
-	}
 	return ret;
 }
 
@@ -791,10 +761,34 @@ long __SYSCALL sys_connect(user_addr_t path, unsigned long timeout_msecs)
 	if ((uint)ret >= sizeof(tmp_path))
 		return (long) ERR_INVALID_ARGS;
 
-	ret = ipc_port_connect(&tapp->props.uuid, tmp_path, sizeof(tmp_path),
-                               timeout_msecs, &chandle);
+	ret = ipc_port_connect_async(&tapp->props.uuid,
+				     tmp_path, sizeof(tmp_path),
+				     timeout_msecs ? IPC_CONNECT_WAIT_FOR_PORT : 0,
+				     &chandle);
 	if (ret != NO_ERROR)
 		return (long) ret;
+
+	uint32_t event;
+	ret = handle_wait(chandle, &event, timeout_msecs);
+	if (ret < 0) {
+		/* timeout or other error */
+		handle_close(chandle);
+		return ret;
+	}
+
+	if ((event & IPC_HANDLE_POLL_HUP) &&
+	    !(event & IPC_HANDLE_POLL_MSG)) {
+		/* hangup and no pending messages */
+		handle_close(chandle);
+		return ERR_CHANNEL_CLOSED;
+	}
+
+	if (!(event & IPC_HANDLE_POLL_READY)) {
+		/* not connected */
+		TRACEF("Unexpected channel state: event = 0x%x\n", event);
+		handle_close(chandle);
+		return ERR_NOT_READY;
+	}
 
 	ret = uctx_handle_install(ctx, chandle, &handle_id);
 	if (ret != NO_ERROR) {

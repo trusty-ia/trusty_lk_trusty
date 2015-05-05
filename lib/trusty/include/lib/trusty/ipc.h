@@ -73,6 +73,7 @@ enum {
 	IPC_CHAN_STATE_CONNECTING	= 2,
 	IPC_CHAN_STATE_CONNECTED	= 3,
 	IPC_CHAN_STATE_DISCONNECTING	= 4,
+	IPC_CHAN_STATE_WAITING_FOR_PORT	= 5,
 };
 
 enum {
@@ -116,6 +117,13 @@ typedef struct ipc_chan {
 	struct list_node	node;
 
 	ipc_msg_queue_t		*msg_queue;
+
+	/*
+	 * TODO: consider changing async connect to preallocate
+	 *       not-yet-existing port object then we can get rid
+	  *      of this field.
+	 */
+	const char		*path;
 } ipc_chan_t;
 
 /* called by server to create port */
@@ -128,8 +136,11 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
                     const uuid_t **uuid_ptr);
 
 /* client requests a connection to a port */
-int ipc_port_connect(const uuid_t *cid, const char *path, size_t max_path,
-                     lk_time_t timeout,  handle_t **chandle_ptr);
+enum {
+	IPC_CONNECT_WAIT_FOR_PORT = 0x1,
+};
+int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
+			   uint flags, handle_t **chandle_ptr);
 
 bool ipc_is_channel(handle_t *handle);
 bool ipc_is_port(handle_t *handle);

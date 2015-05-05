@@ -285,43 +285,31 @@ static int handle_conn_req(struct tipc_dev *dev, uint32_t remote,
 	LTRACEF("remote %u\n", remote);
 
 	/* open ipc channel */
-	/* TODO: set reasonable timeout */
-	err = ipc_port_connect(dev->uuid, req->name, sizeof(req->name),
-		               2000, &chan);
-	if (!err) {
+	err = ipc_port_connect_async(dev->uuid, req->name, sizeof(req->name),
+				     0, &chan);
+	if (err == NO_ERROR) {
 		mutex_acquire(&dev->ept_lock);
 		local = alloc_local_addr(dev, remote, chan);
 		if (local == 0) {
+			LTRACEF("failed to alloc local address\n");
 			handle_close(chan);
 			chan = NULL;
 		}
 		mutex_release(&dev->ept_lock);
 	}
 
-	/* send response */
-	if (local) {
-		// TODO: get max msg size out of channel
-		err = send_conn_rsp(dev, local, remote, 0,
-			            IPC_CHAN_MAX_BUF_SIZE, 1);
-	} else {
-		err = send_conn_rsp(dev, local, remote, ERR_NO_RESOURCES, 0, 0);
+	if (chan) {
+		LTRACEF("new handle: local = 0x%x remote = 0x%x\n",
+			 local, remote);
+		handle_set_cookie(chan, lookup_ept(dev, local));
+		handle_list_add(&dev->handle_list, chan);
+		event_signal(&dev->have_handles, false);
+		return NO_ERROR;
 	}
-	if (err == NO_ERROR) {
-		if (chan) {
-			LTRACEF("new handle: local = 0x%x remote = 0x%x\n",
-				 local, remote);
-			handle_set_cookie(chan, lookup_ept(dev, local));
-			handle_list_add(&dev->handle_list, chan);
-			event_signal(&dev->have_handles, false);
-		}
-	} else {
+
+	err = send_conn_rsp(dev, local, remote, ERR_NO_RESOURCES, 0, 0);
+	if (err) {
 		TRACEF("failed (%d) to send response\n", err);
-		if (chan) {
-			mutex_acquire(&dev->ept_lock);
-			free_local_addr(dev, local);
-			handle_close(chan);
-			mutex_release(&dev->ept_lock);
-		}
 	}
 
 	return err;
@@ -660,6 +648,30 @@ static void handle_hup(struct tipc_dev *dev, handle_t *chan)
 
 }
 
+static void handle_ready(struct tipc_dev *dev, handle_t *chan)
+{
+	uint32_t local = 0;
+	uint32_t remote = 0;
+	struct tipc_ept *ept;
+	bool send_rsp = false;
+
+	mutex_acquire(&dev->ept_lock);
+	ept = handle_get_cookie(chan);
+	if (ept) {
+		/* get remote address */
+		remote = ept->remote;
+		local  = ept_to_addr(dev, ept);
+		send_rsp = true;
+	}
+	mutex_release(&dev->ept_lock);
+
+	if (send_rsp) {
+		/* send disconnect request */
+		(void) send_conn_rsp(dev, local, remote, 0,
+				     IPC_CHAN_MAX_BUF_SIZE, 1);
+	}
+}
+
 static void handle_tx(struct tipc_dev *dev)
 {
 	int ret;
@@ -688,7 +700,9 @@ static void handle_tx(struct tipc_dev *dev)
 		DEBUG_ASSERT(chan);
 		DEBUG_ASSERT(ipc_is_channel(chan));
 
-		if (chan_event & IPC_HANDLE_POLL_MSG) {
+		if (chan_event & IPC_HANDLE_POLL_READY) {
+			handle_ready(dev, chan);
+		} else if (chan_event & IPC_HANDLE_POLL_MSG) {
 			handle_tx_msg(dev, chan);
 		} else if (chan_event & IPC_HANDLE_POLL_HUP) {
 			handle_hup(dev, chan);
