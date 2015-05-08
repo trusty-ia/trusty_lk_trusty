@@ -23,7 +23,7 @@
 #ifndef __PLATFORM_GIC_H
 #define __PLATFORM_GIC_H
 
-#define MAX_INT 64
+#define MAX_INT 1020
 #if ARCH_ARM64
 #define GIC_BASE_VIRT 0xffffffffffff0000
 #else
