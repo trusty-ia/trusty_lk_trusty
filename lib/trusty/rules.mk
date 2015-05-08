@@ -13,6 +13,8 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/iovec.c \
 	$(LOCAL_DIR)/uuid.c
 
+# include support for external elf.h
+include include/elf/rules.mk
 
 ifeq (true,$(call TOBOOL,$(WITH_TRUSTY_IPC)))
 GLOBAL_DEFINES += WITH_TRUSTY_IPC=1
