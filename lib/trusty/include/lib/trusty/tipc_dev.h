@@ -25,7 +25,7 @@
 
 #include <sys/types.h>
 #include <arch/defines.h>
-#include <lib/trusty/fw_rsc_types.h>
+#include <remoteproc/remoteproc.h>
 #include <lib/trusty/uuid.h>
 
 struct tipc_dev;

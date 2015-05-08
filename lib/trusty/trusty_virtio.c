@@ -34,7 +34,7 @@
 #include <kernel/mutex.h>
 #include <arch/arch_ops.h>
 
-#include <lib/trusty/fw_rsc_types.h>
+#include <remoteproc/remoteproc.h>
 #include "trusty_virtio.h"
 
 #define LOCAL_TRACE  0
