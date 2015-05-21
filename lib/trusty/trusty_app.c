@@ -28,7 +28,7 @@
 #include <assert.h>
 #include <compiler.h>
 #include <debug.h>
-#include <elf.h>
+#include "elf.h"
 #include <err.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
@@ -257,7 +257,7 @@ static status_t init_brk(trusty_app_t *trusty_app)
 
 static status_t alloc_address_map(trusty_app_t *trusty_app)
 {
-	Elf32_Ehdr *elf_hdr = trusty_app->elf_hdr;
+	Elf32_Ehdr *elf_hdr = trusty_app->app_img;
 	void *trusty_app_image;
 	Elf32_Phdr *prg_hdr;
 	u_int i, trusty_app_idx;
@@ -267,7 +267,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 	vaddr_t end_code = 0;
 	vaddr_t end_data = 0;
 
-	trusty_app_image = trusty_app->elf_hdr;
+	trusty_app_image = trusty_app->app_img;
 	trusty_app_idx = trusty_app - trusty_app_list;
 
 	/* create mappings for PT_LOAD sections */
@@ -509,7 +509,7 @@ static void trusty_app_bootloader(void)
 		memset((uint8_t *)trusty_app_image_addr + bss_shdr->sh_offset, 0, bss_shdr->sh_size);
 
 		load_app_config_options((intptr_t)trusty_app_image_addr, trusty_app, manifest_shdr);
-		trusty_app->elf_hdr = ehdr;
+		trusty_app->app_img = ehdr;
 
 		/* align next trusty_app start */
 		trusty_app_image_addr = align_next_app(ehdr, bss_pad_shdr, trusty_app_max_extent);
@@ -577,7 +577,8 @@ void trusty_app_init(void)
 
 		/* entry is 0 at this point since we haven't parsed the elf hdrs
 		 * yet */
-		uthread = uthread_create(name, trusty_app->elf_hdr->e_entry,
+		Elf32_Ehdr *elf_hdr = trusty_app->app_img;
+		uthread = uthread_create(name, elf_hdr->e_entry,
 					 DEFAULT_PRIORITY, TRUSTY_APP_STACK_TOP,
 					 trusty_app->props.min_stack_size, trusty_app);
 		if (uthread == NULL) {

@@ -26,7 +26,6 @@
 #define __LIB_TRUSTY_APP_H
 
 #include <assert.h>
-#include <elf.h>
 #include <list.h>
 #include <sys/types.h>
 #include <uthread.h>
@@ -57,7 +56,7 @@ typedef struct trusty_app
 
 	trusty_app_props_t props;
 
-	Elf32_Ehdr *elf_hdr;
+	void *app_img;
 
 	uthread_t *ut;
 
