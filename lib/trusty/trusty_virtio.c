@@ -227,14 +227,16 @@ ssize_t virtio_get_description(ns_paddr_t buf_pa, ns_size_t buf_sz,
 /*
  * Called by NS side to finalize device initialization
  */
-status_t virtio_start(ns_paddr_t descr_pa, ns_size_t descr_sz,
+status_t virtio_start(ns_paddr_t ns_descr_pa, ns_size_t descr_sz,
                       uint descr_mmu_flags)
 {
 	status_t ret;
 	int oldstate;
+	void *descr_va;
+	void *ns_descr_va = NULL;
 	struct trusty_virtio_bus *vb = &_virtio_bus;
 
-	LTRACEF("%zu bytes @ 0x%llx\n", descr_sz, descr_pa);
+	LTRACEF("%zu bytes @ 0x%llx\n", descr_sz, ns_descr_pa);
 
 	oldstate = atomic_cmpxchg(&vb->state,
 				  VIRTIO_BUS_STATE_IDLE,
@@ -253,26 +255,38 @@ status_t virtio_start(ns_paddr_t descr_pa, ns_size_t descr_sz,
 		goto err_bad_params;
 	}
 
-	void *va = NULL;
-	ret = map_descr(descr_pa, &va, vb->descr_size, descr_mmu_flags);
+	descr_va = malloc(descr_sz);
+	if (!descr_va) {
+		LTRACEF("not enough memory to store descr\n");
+		ret = ERR_NO_MEMORY;
+		goto err_alloc_descr;
+	}
+
+	ret = map_descr(ns_descr_pa, &ns_descr_va, vb->descr_size, descr_mmu_flags);
 	if (ret != NO_ERROR) {
 		LTRACEF("failed (%d) to map in descriptor buffer\n", ret);
 		goto err_map_in;
 	}
 
+	/* copy descriptor out of NS memory before parsing it */
+	memcpy(descr_va, ns_descr_va, descr_sz);
+
 	/* handle it */
 	struct vdev *vd;
 	list_for_every_entry(&vb->vdev_list, vd, struct vdev, node) {
-		vd->ops->probe(vd, (void*)((uint8_t*)va + vd->descr_offset));
+		vd->ops->probe(vd, (void*)((uint8_t*)descr_va + vd->descr_offset));
 	}
 
-	unmap_descr(descr_pa, va, vb->descr_size);
+	unmap_descr(ns_descr_pa, ns_descr_va, vb->descr_size);
+	free(descr_va);
 
 	vb->state = VIRTIO_BUS_STATE_ACTIVE;
 
 	return NO_ERROR;
 
 err_map_in:
+	free(descr_va);
+err_alloc_descr:
 err_bad_params:
 	vb->state = oldstate;
 	return ret;
