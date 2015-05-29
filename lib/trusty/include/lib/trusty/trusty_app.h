@@ -55,6 +55,8 @@ struct trusty_thread
 
 typedef struct trusty_app
 {
+    /* corresponds to the order in which the apps were started */
+    u_int app_id;
     vmm_aspace_t *aspace;
     vaddr_t end_bss;
     vaddr_t start_brk;
@@ -65,6 +67,7 @@ typedef struct trusty_app
     struct trusty_thread *thread;
     /* app local storage */
     void **als;
+    struct list_node node;
 } trusty_app_t;
 
 void trusty_app_init(void);

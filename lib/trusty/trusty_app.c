@@ -61,15 +61,13 @@ typedef struct trusty_app_manifest {
     uint32_t    config_options[];
 } trusty_app_manifest_t;
 
-#define MAX_TRUSTY_APP_COUNT    (PAGE_SIZE / sizeof(trusty_app_t))
-
 #define TRUSTY_APP_START_ADDR   0x8000
 #define TRUSTY_APP_STACK_TOP    0x1000000 /* 16MB */
 
 #define PAGE_MASK               (PAGE_SIZE - 1)
 
-static u_int trusty_app_count;
-static trusty_app_t *trusty_app_list;
+static u_int trusty_next_app_id;
+static struct list_node trusty_app_list = LIST_INITIAL_VALUE(trusty_app_list);
 
 static char *trusty_app_image_start;
 static char *trusty_app_image_end;
@@ -215,7 +213,6 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
     char  *manifest_data;
     u_int *config_blob, config_blob_size;
     u_int i;
-    u_int trusty_app_idx;
 
     /* have to at least have a valid UUID */
     ASSERT(shdr->sh_size >= sizeof(uuid_t));
@@ -224,13 +221,11 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
     trusty_app->props.min_heap_size = 4 * PAGE_SIZE;
     trusty_app->props.min_stack_size = DEFAULT_STACK_SIZE;
 
-    trusty_app_idx = trusty_app - trusty_app_list;
-
     manifest_data = (char *)(trusty_app_image_addr + shdr->sh_offset);
 
     memcpy(&trusty_app->props.uuid, (uuid_t *)manifest_data, sizeof(uuid_t));
 
-    PRINT_TRUSTY_APP_UUID(trusty_app_idx, &trusty_app->props.uuid);
+    PRINT_TRUSTY_APP_UUID(trusty_app->app_id, &trusty_app->props.uuid);
 
     manifest_data += sizeof(trusty_app->props.uuid);
 
@@ -323,7 +318,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
     Elf32_Ehdr *elf_hdr = trusty_app->app_img;
     void *trusty_app_image;
     Elf32_Phdr *prg_hdr;
-    u_int i, trusty_app_idx;
+    u_int i;
     status_t ret;
     vaddr_t start_code = ~0;
     vaddr_t start_data = 0;
@@ -331,7 +326,6 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
     vaddr_t end_data = 0;
 
     trusty_app_image = trusty_app->app_img;
-    trusty_app_idx = trusty_app - trusty_app_list;
 
     /* create mappings for PT_LOAD sections */
     for (i = 0; i < elf_hdr->e_phnum; i++) {
@@ -342,7 +336,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 
         LTRACEF("trusty_app %d: ELF type 0x%x, vaddr 0x%08x, paddr 0x%08x"
                 " rsize 0x%08x, msize 0x%08x, flags 0x%08x\n",
-                trusty_app_idx, prg_hdr->p_type, prg_hdr->p_vaddr,
+                trusty_app->app_id, prg_hdr->p_type, prg_hdr->p_vaddr,
                 prg_hdr->p_paddr, prg_hdr->p_filesz, prg_hdr->p_memsz,
                 prg_hdr->p_flags);
 
@@ -394,7 +388,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
         LTRACEF("trusty_app %d: load vaddr 0x%08lx, paddr 0x%08lx,"
                 " rsize 0x%08zx, msize 0x%08x, access r%c%c,"
                 " flags 0x%x\n",
-                trusty_app_idx, vaddr, paddr, size, prg_hdr->p_memsz,
+                trusty_app->app_id, vaddr, paddr, size, prg_hdr->p_memsz,
                 arch_mmu_flags & ARCH_MMU_FLAG_PERM_RO ? '-' : 'w',
                 arch_mmu_flags & ARCH_MMU_FLAG_PERM_NO_EXECUTE ? '-' : 'x',
                 arch_mmu_flags);
@@ -438,14 +432,14 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
     }
 
     dprintf(SPEW, "trusty_app %d: code: start 0x%08lx end 0x%08lx\n",
-            trusty_app_idx, start_code, end_code);
+            trusty_app->app_id, start_code, end_code);
     dprintf(SPEW, "trusty_app %d: data: start 0x%08lx end 0x%08lx\n",
-            trusty_app_idx, start_data, end_data);
+            trusty_app->app_id, start_data, end_data);
     dprintf(SPEW, "trusty_app %d: bss:                end 0x%08lx\n",
-            trusty_app_idx, trusty_app->end_bss);
+            trusty_app->app_id, trusty_app->end_bss);
     dprintf(SPEW, "trusty_app %d: brk:  start 0x%08lx end 0x%08lx\n",
-            trusty_app_idx, trusty_app->start_brk, trusty_app->end_brk);
-    dprintf(SPEW, "trusty_app %d: entry 0x%08lx\n", trusty_app_idx,
+            trusty_app->app_id, trusty_app->start_brk, trusty_app->end_brk);
+    dprintf(SPEW, "trusty_app %d: entry 0x%08lx\n", trusty_app->app_id,
             trusty_app->thread->entry);
 
     return NO_ERROR;
@@ -519,15 +513,17 @@ static void trusty_app_bootloader(void)
 
     trusty_app_image_addr = trusty_app_image_start;
 
-    /* alloc trusty_app_list page from carveout */
-    if (trusty_app_image_size) {
-        trusty_app_list = (trusty_app_t *)memalign(PAGE_SIZE, PAGE_SIZE);
-        trusty_app = trusty_app_list;
-        memset(trusty_app, 0, PAGE_SIZE);
-    }
-
     while (trusty_app_image_size > 0) {
         u_int i, trusty_app_max_extent;
+
+        trusty_app = (trusty_app_t *) calloc(1, sizeof(trusty_app_t));
+        if (!trusty_app) {
+            dprintf(CRITICAL,
+                    "trusty_app: failed to allocate memory for trusty app\n");
+            break;
+        }
+
+        trusty_app->app_id = trusty_next_app_id++;
 
         ehdr = (Elf32_Ehdr *) trusty_app_image_addr;
         if (strncmp((char *)ehdr->e_ident, ELFMAG, SELFMAG)) {
@@ -589,9 +585,7 @@ static void trusty_app_bootloader(void)
         trusty_app_image_addr = align_next_app(ehdr, bss_pad_shdr,
                                                trusty_app_max_extent);
 
-        ASSERT((trusty_app_count + 1) < MAX_TRUSTY_APP_COUNT);
-        trusty_app_count++;
-        trusty_app++;
+        list_add_tail(&trusty_app_list, &trusty_app->node);
     }
 }
 
@@ -637,7 +631,6 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 void trusty_app_init(void)
 {
     trusty_app_t *trusty_app;
-    u_int i;
 
     trusty_app_image_start = (char *)&__trusty_app_start;
     trusty_app_image_end = (char *)&__trusty_app_end;
@@ -649,13 +642,13 @@ void trusty_app_init(void)
 
     trusty_app_bootloader();
 
-    for (i = 0, trusty_app = trusty_app_list; i < trusty_app_count;
-         i++, trusty_app++) {
+    list_for_every_entry(&trusty_app_list, trusty_app, trusty_app_t, node) {
         char name[32];
         struct trusty_thread *trusty_thread;
         int ret;
 
-        snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x", i,
+        snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x",
+                 trusty_app->app_id,
                  trusty_app->props.uuid.time_low,
                  trusty_app->props.uuid.time_mid,
                  trusty_app->props.uuid.time_hi_and_version);
@@ -706,10 +699,9 @@ void trusty_app_init(void)
 trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid)
 {
     trusty_app_t *ta;
-    u_int i;
 
     /* find app for this uuid */
-    for (i = 0, ta = trusty_app_list; i < trusty_app_count; i++, ta++)
+    list_for_every_entry(&trusty_app_list, ta, trusty_app_t, node)
         if (!memcmp(&ta->props.uuid, uuid, sizeof(uuid_t)))
             return ta;
 
@@ -719,24 +711,21 @@ trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid)
 /* rather export trusty_app_list?  */
 void trusty_app_forall(void (*fn)(trusty_app_t *ta, void *data), void *data)
 {
-    u_int i;
     trusty_app_t *ta;
 
     if (fn == NULL)
         return;
 
-    for (i = 0, ta = trusty_app_list; i < trusty_app_count; i++, ta++)
+    list_for_every_entry(&trusty_app_list, ta, trusty_app_t, node)
         fn(ta, data);
 }
 
 static void start_apps(uint level)
 {
     trusty_app_t *trusty_app;
-    u_int i;
     int ret;
 
-    for (i = 0, trusty_app = trusty_app_list; i < trusty_app_count;
-         i++, trusty_app++) {
+    list_for_every_entry(&trusty_app_list, trusty_app, trusty_app_t, node) {
         if (trusty_app->thread->entry) {
             ret = trusty_thread_start(trusty_app->thread);
             if (ret)
