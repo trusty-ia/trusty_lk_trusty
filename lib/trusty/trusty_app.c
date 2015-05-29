@@ -22,8 +22,6 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//#define DEBUG_LOAD_TRUSTY_APP
-
 #include <arch.h>
 #include <assert.h>
 #include <compiler.h>
@@ -39,9 +37,11 @@
 #include <string.h>
 #include <sys/types.h>
 #include <lk/init.h>
+#include <trace.h>
 
 #include <lib/trusty/trusty_app.h>
 
+#define LOCAL_TRACE 0
 /*
  * Layout of .trusty_app.manifest section in the trusted application is the
  * required UUID followed by an abitrary number of configuration options.
@@ -282,14 +282,12 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
         }
     }
 
-#if DEBUG_LOAD_TRUSTY_APP
-    dprintf(SPEW, "trusty_app %p: stack_sz=0x%x\n", trusty_app,
+    LTRACEF("trusty_app %p: stack_sz=0x%x\n", trusty_app,
             trusty_app->props.min_stack_size);
-    dprintf(SPEW, "trusty_app %p: heap_sz=0x%x\n", trusty_app,
+    LTRACEF("trusty_app %p: heap_sz=0x%x\n", trusty_app,
             trusty_app->props.min_heap_size);
-    dprintf(SPEW, "trusty_app %p: num_io_mem=%d\n", trusty_app,
+    LTRACEF("trusty_app %p: num_io_mem=%d\n", trusty_app,
             trusty_app->props.map_io_mem_cnt);
-#endif
 }
 
 static status_t init_brk(trusty_app_t *trusty_app)
@@ -342,14 +340,11 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
         prg_hdr = (Elf32_Phdr *)(trusty_app_image + elf_hdr->e_phoff +
                                  (i * sizeof(Elf32_Phdr)));
 
-#if DEBUG_LOAD_TRUSTY_APP
-        dprintf(SPEW,
-                "trusty_app %d: ELF type 0x%x, vaddr 0x%08x, paddr 0x%08x"
+        LTRACEF("trusty_app %d: ELF type 0x%x, vaddr 0x%08x, paddr 0x%08x"
                 " rsize 0x%08x, msize 0x%08x, flags 0x%08x\n",
                 trusty_app_idx, prg_hdr->p_type, prg_hdr->p_vaddr,
                 prg_hdr->p_paddr, prg_hdr->p_filesz, prg_hdr->p_memsz,
                 prg_hdr->p_flags);
-#endif
 
         if (prg_hdr->p_type != PT_LOAD)
             continue;
@@ -396,16 +391,13 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
             return ERR_TOO_BIG;
         }
 
-#if DEBUG_LOAD_TRUSTY_APP
-        dprintf(SPEW,
-                "trusty_app %d: load vaddr 0x%08lx, paddr 0x%08lx,"
-                " rsize 0x%08x, msize 0x%08x, access r%c%c,"
+        LTRACEF("trusty_app %d: load vaddr 0x%08lx, paddr 0x%08lx,"
+                " rsize 0x%08zx, msize 0x%08x, access r%c%c,"
                 " flags 0x%x\n",
                 trusty_app_idx, vaddr, paddr, size, prg_hdr->p_memsz,
                 arch_mmu_flags & ARCH_MMU_FLAG_PERM_RO ? '-' : 'w',
                 arch_mmu_flags & ARCH_MMU_FLAG_PERM_NO_EXECUTE ? '-' : 'x',
                 arch_mmu_flags);
-#endif
 
         /* start of code/data */
         first = prg_hdr->p_vaddr;
@@ -555,11 +547,10 @@ static void trusty_app_bootloader(void)
 
             if (shdr[i].sh_type == SHT_NULL)
                 continue;
-#if DEBUG_LOAD_TRUSTY_APP
-            dprintf(SPEW, "trusty_app: sect %d, off 0x%08x, size 0x%08x, flags 0x%02x, name %s\n",
+
+            LTRACEF("trusty_app: sect %d, off 0x%08x, size 0x%08x, flags 0x%02x, name %s\n",
                     i, shdr[i].sh_offset, shdr[i].sh_size, shdr[i].sh_flags,
                     shstbl + shdr[i].sh_name);
-#endif
 
             /* track bss and manifest sections */
             if (!strcmp((shstbl + shdr[i].sh_name), ".bss")) {
