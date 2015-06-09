@@ -33,6 +33,8 @@
 #include <lk/init.h>
 #include <sys/types.h>
 
+#define LOCAL_TRACE	0
+
 void sm_set_mon_stack(void *stack);
 
 extern unsigned long monitor_vector_table;
@@ -42,8 +44,45 @@ static void *boot_args;
 static int boot_args_refcnt;
 static mutex_t boot_args_lock = MUTEX_INITIAL_VALUE(boot_args_lock);
 static thread_t *nsthread;
+static uint32_t sm_api_version;
+static bool sm_api_version_locked;
+static spin_lock_t sm_api_version_lock;
 
 extern smc32_handler_t sm_stdcall_table[];
+
+long smc_sm_api_version(smc32_args_t *args)
+{
+	uint32_t api_version = args->params[0];
+
+	spin_lock(&sm_api_version_lock);
+	if (!sm_api_version_locked) {
+		LTRACEF("request api version %d\n", api_version);
+		if (api_version > TRUSTY_API_VERSION_CURRENT)
+			api_version = TRUSTY_API_VERSION_CURRENT;
+
+		sm_api_version = api_version;
+	} else {
+		TRACEF("ERROR: Tried to select api version %d after use, current version %d\n",
+		       api_version, sm_api_version);
+		api_version = sm_api_version;
+	}
+	spin_unlock(&sm_api_version_lock);
+
+	LTRACEF("return api version %d\n", api_version);
+	return api_version;
+}
+
+static uint32_t sm_get_api_version(void)
+{
+	if (!sm_api_version_locked) {
+		spin_lock_saved_state_t state;
+		spin_lock_save(&sm_api_version_lock, &state, SPIN_LOCK_FLAG_IRQ_FIQ);
+		sm_api_version_locked = true;
+		TRACEF("lock api version %d\n", sm_api_version);
+		spin_unlock_restore(&sm_api_version_lock, state, SPIN_LOCK_FLAG_IRQ_FIQ);
+	}
+	return sm_api_version;
+}
 
 static void sm_wait_for_smcall(void)
 {

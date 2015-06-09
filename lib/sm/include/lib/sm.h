@@ -55,6 +55,10 @@ void sm_sched_nonsecure(long retval, smc32_args_t *args);
 
 /* Handle an interrupt */
 enum handler_return sm_handle_irq(void);
+void sm_handle_fiq(void);
+
+/* Version */
+long smc_sm_api_version(smc32_args_t *args);
 
 /* Interrupt controller irq/fiq support */
 long smc_intc_get_next_irq(smc32_args_t *args);

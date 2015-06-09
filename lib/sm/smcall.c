@@ -164,6 +164,7 @@ smc32_handler_t sm_fastcall_function_table[] = {
 #if WITH_LIB_VERSION
 	[SMC_FUNCTION(SMC_FC_GET_VERSION_STR)] = smc_get_version_str,
 #endif
+	[SMC_FUNCTION(SMC_FC_API_VERSION)] = smc_sm_api_version,
 };
 
 uint32_t sm_nr_fastcall_functions = countof(sm_fastcall_function_table);
