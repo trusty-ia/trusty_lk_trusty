@@ -209,6 +209,25 @@ enum handler_return sm_handle_irq(void)
 	return INT_NO_RESCHEDULE;
 }
 
+void sm_handle_fiq(void)
+{
+	uint32_t expected_return;
+	smc32_args_t args = {0};
+	if (sm_get_api_version() >= TRUSTY_API_VERSION_RESTART_FIQ) {
+		sm_sched_nonsecure(SM_ERR_FIQ_INTERRUPTED, &args);
+		expected_return = SMC_SC_RESTART_FIQ;
+	} else {
+		sm_sched_nonsecure(SM_ERR_INTERRUPTED, &args);
+		expected_return = SMC_SC_RESTART_LAST;
+	}
+	if (args.smc_nr != expected_return) {
+		TRACEF("got bad restart smc %x, expected %x\n",
+		       args.smc_nr, expected_return);
+		while (args.smc_nr != expected_return)
+			sm_sched_nonsecure(SM_ERR_INTERLEAVED_SMC, &args);
+	}
+}
+
 status_t sm_get_boot_args(void **boot_argsp, size_t *args_sizep)
 {
 	status_t err = NO_ERROR;
