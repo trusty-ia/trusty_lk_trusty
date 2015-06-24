@@ -27,6 +27,7 @@
 #include <err.h>
 #include <kernel/thread.h>
 #include <kernel/mutex.h>
+#include <mm.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -157,4 +158,36 @@ long sys_gettime(uint32_t clock_id, uint32_t flags, user_addr_t time)
 	lk_bigtime_t t = current_time_hires() * 1000;
 
 	return copy_to_user(time, &t, sizeof(int64_t));
+}
+
+long sys_mmap(user_addr_t uaddr, uint32_t size, uint32_t flags, uint32_t handle)
+{
+	trusty_app_t *trusty_app = uthread_get_current()->private_data;
+	vaddr_t vaddr;
+	long ret;
+
+	/*
+	 * Only allows mapping on IO region specified by handle (id) and uaddr
+	 * must be 0 for now.
+	 * TBD: Add support in uthread_map to use uaddr as a hint.
+	 */
+	if (flags != MMAP_FLAG_IO_HANDLE || uaddr != 0)
+		return ERR_INVALID_ARGS;
+
+	ret = trusty_app_setup_mmio(trusty_app, handle, &vaddr, size);
+	if (ret != NO_ERROR)
+		return ret;
+
+	return vaddr;
+}
+
+long sys_munmap(user_addr_t uaddr, uint32_t size)
+{
+	trusty_app_t *trusty_app = uthread_get_current()->private_data;
+
+	/*
+	 * uthread_unmap always unmaps whole region.
+	 * TBD: Add support to unmap partial region when there's use case.
+	 */
+	return uthread_unmap(trusty_app->ut, uaddr, size);
 }

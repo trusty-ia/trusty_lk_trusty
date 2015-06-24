@@ -521,7 +521,7 @@ static void trusty_app_bootloader(void)
 }
 
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
-		vaddr_t *vaddr)
+		vaddr_t *vaddr, uint32_t map_size)
 {
 	u_int i;
 	u_int id, offset, size;
@@ -537,8 +537,12 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 			if (id != mmio_id)
 				continue;
 
+			map_size = ROUNDUP(map_size, PAGE_SIZE);
+			if (map_size > size)
+				return ERR_INVALID_ARGS;
+
 			return uthread_map_contig(trusty_app->ut, vaddr, offset,
-						size, UTM_W | UTM_R | UTM_IO,
+						map_size, UTM_W | UTM_R | UTM_IO,
 						UT_MAP_ALIGN_4KB);
 		} else {
 			/* all other config options take 1 data value */
