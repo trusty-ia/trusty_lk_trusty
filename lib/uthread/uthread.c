@@ -223,6 +223,7 @@ static uthread_map_t *uthread_map_find(uthread_t *ut, vaddr_t vaddr, size_t size
 	/* TODO: Fuzzy comparisions for now */
 	list_for_every_entry(&ut->map_list, mp, uthread_map_t, node) {
 		if ((mp->vaddr <= vaddr) &&
+		    (vaddr < mp->vaddr + mp->size) &&
 		    ((mp->vaddr + mp->size) >= (vaddr + size))) {
 			return mp;
 		}
