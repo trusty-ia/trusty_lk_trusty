@@ -151,10 +151,10 @@ long sys_nanosleep(uint32_t clock_id, uint32_t flags,
 	return NO_ERROR;
 }
 
-long sys_gettime(uint32_t clock_id, uint32_t flags, int64_t *time)
+long sys_gettime(uint32_t clock_id, uint32_t flags, user_addr_t time)
 {
 	// return time in nanoseconds
 	lk_bigtime_t t = current_time_hires() * 1000;
 
-	return copy_to_user((user_addr_t)time, &t, sizeof(int64_t));
+	return copy_to_user(time, &t, sizeof(int64_t));
 }
