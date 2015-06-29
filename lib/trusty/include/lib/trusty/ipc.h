@@ -131,6 +131,9 @@ int ipc_port_create(const uuid_t *sid, const char *path,
                     uint num_recv_bufs, size_t recv_buf_size,
                     uint32_t flags,  handle_t **phandle_ptr);
 
+/* called by server to publish the port */
+int ipc_port_publish(handle_t *phandle);
+
 /* server calls to accept a pending connection */
 int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
                     const uuid_t **uuid_ptr);

@@ -233,7 +233,7 @@ static void port_handle_destroy(handle_t *phandle)
 /*
  *   Make specified port publically available for operation.
  */
-static int ipc_port_publish(handle_t *phandle)
+int ipc_port_publish(handle_t *phandle)
 {
 	int ret = NO_ERROR;
 
