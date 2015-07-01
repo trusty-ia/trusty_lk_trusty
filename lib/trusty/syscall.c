@@ -191,3 +191,75 @@ long sys_munmap(user_addr_t uaddr, uint32_t size)
 	 */
 	return uthread_unmap(trusty_app->ut, uaddr, size);
 }
+
+#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
+
+long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
+		user_addr_t pmem)
+{
+	uthread_t *current = uthread_get_current();
+	struct dma_pmem kpmem;
+	uint32_t mapped_size = 0;
+	uint32_t entries = 0;
+	long ret;
+
+	if (size == 0 || !valid_address((vaddr_t)uaddr, size))
+		return ERR_INVALID_ARGS;
+
+	do {
+		ret = uthread_virt_to_phys(current,
+				(vaddr_t)uaddr + mapped_size, &kpmem.paddr);
+		if (ret != NO_ERROR)
+			return ret;
+
+		kpmem.size = MIN(size - mapped_size,
+			PAGE_SIZE - (kpmem.paddr & (PAGE_SIZE - 1)));
+
+		ret = copy_to_user(pmem, &kpmem, sizeof(struct dma_pmem));
+		if (ret != NO_ERROR)
+			return ret;
+
+		pmem += sizeof(struct dma_pmem);
+
+		mapped_size += kpmem.size;
+		entries++;
+
+	} while (mapped_size < size && (flags & DMA_FLAG_MULTI_PMEM));
+
+	if (flags & DMA_FLAG_FROM_DEVICE)
+		arch_clean_invalidate_cache_range(uaddr, mapped_size);
+	else
+		arch_clean_cache_range(uaddr, mapped_size);
+
+	if (!(flags & DMA_FLAG_ALLOW_PARTIAL) && mapped_size != size)
+		return ERR_BAD_LEN;
+
+	return entries;
+}
+
+long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
+{
+	/* check buffer is in task's address space */
+	if (!valid_address((vaddr_t)uaddr, size))
+		return ERR_INVALID_ARGS;
+
+	if (flags & DMA_FLAG_FROM_DEVICE)
+		arch_clean_invalidate_cache_range(uaddr, size);
+
+	return NO_ERROR;
+}
+
+#else /* !UTHREAD_WITH_MEMORY_MAPPING_SUPPORT */
+
+long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
+		user_addr_t pmem)
+{
+	return ERR_NOT_SUPPORTED;
+}
+
+long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
+{
+	return ERR_NOT_SUPPORTED;
+}
+
+#endif
