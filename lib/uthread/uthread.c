@@ -279,7 +279,6 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 	status_t err;
 	vaddr_t stack_bot;
 	spin_lock_saved_state_t state;
-
 	ut = (uthread_t *)calloc(1, sizeof(uthread_t));
 	if (!ut)
 		goto err_done;
@@ -383,7 +382,6 @@ static status_t uthread_map_locked(uthread_t *ut, vaddr_t *vaddrp,
 {
 	uthread_map_t *mp = NULL;
 	status_t err = NO_ERROR;
-
 	if (!ut || !pfn_list || !vaddrp) {
 		err = ERR_INVALID_ARGS;
 		goto done;

@@ -22,7 +22,7 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-//#define DEBUG_LOAD_TRUSTY_APP
+//#define DEBUG_LOAD_TRUSTY_APP 1
 
 #include <arch.h>
 #include <assert.h>
@@ -65,7 +65,9 @@ typedef struct trusty_app_manifest {
 #define MAX_TRUSTY_APP_COUNT	(PAGE_SIZE / sizeof(trusty_app_t))
 
 #define TRUSTY_APP_START_ADDR	0x8000
-#define TRUSTY_APP_STACK_TOP	0x1000000 /* 16MB */
+//#define TRUSTY_APP_STACK_TOP	0x1000000 /* 16MB */
+/*temporary change on x86. Required because of zero based kernel. Should be fixed. */
+#define TRUSTY_APP_STACK_TOP	0x90000000
 
 #define PAGE_MASK		(PAGE_SIZE - 1)
 
@@ -132,7 +134,10 @@ int trusty_als_alloc_slot(void)
 	return ret;
 }
 
-
+/*
+ * This is part of the manifest file.
+ * Loading manifest file specification.
+ */
 static void load_app_config_options(intptr_t trusty_app_image_addr,
 		trusty_app_t *trusty_app, Elf32_Shdr *shdr)
 {
@@ -477,8 +482,8 @@ static void trusty_app_bootloader(void)
 			if (shdr[i].sh_type == SHT_NULL)
 				continue;
 #if DEBUG_LOAD_TRUSTY_APP
-			dprintf(SPEW, "trusty_app: sect %d, off 0x%08x, size 0x%08x, flags 0x%02x, name %s\n",
-				i, shdr[i].sh_offset, shdr[i].sh_size, shdr[i].sh_flags, shstbl + shdr[i].sh_name);
+			dprintf(SPEW, "trusty_app: sect %d, off 0x%08x, addr 0x%08x ,size 0x%08x, flags 0x%02x, name %s\n",
+				i, shdr[i].sh_offset, shdr[i].sh_addr, shdr[i].sh_size, shdr[i].sh_flags, shstbl + shdr[i].sh_name);
 #endif
 
 			/* track bss and manifest sections */

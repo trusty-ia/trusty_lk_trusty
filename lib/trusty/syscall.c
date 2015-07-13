@@ -115,8 +115,6 @@ long sys_brk(u_int brk)
 long sys_exit_group(void)
 {
 	thread_t *current = get_current_thread();
-	dprintf(CRITICAL, "exit called, thread %p, name %s\n",
-		current, current->name);
 	uthread_exit(0);
 	return 0L;
 }
