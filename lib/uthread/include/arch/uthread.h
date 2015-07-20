@@ -34,6 +34,7 @@ struct uthread_map;
 
 /* Holds a vaddr large enough for 32 or 64 bit clients */
 typedef uint64_t ext_vaddr_t;
+typedef uint32_t user_addr_t;
 
 void arch_uthread_init(void);
 
@@ -45,6 +46,10 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 
 status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp);
 status_t arch_uthread_unmap(struct uthread *ut, struct uthread_map *mp);
+
+status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len);
+status_t arch_copy_to_user(user_addr_t udest, const void *ksrc, size_t len);
+ssize_t arch_strlcpy_from_user(char *kdst, user_addr_t usrc, size_t len);
 
 #if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
 status_t arch_uthread_translate_map(struct uthread *ut_target, ext_vaddr_t vaddr_src,

@@ -27,6 +27,7 @@ GLOBAL_INCLUDES += \
 		$(CUR_DIR)/include \
 
 MODULE_ARM_OVERRIDE_SRCS += \
+	$(CUR_DIR)/usercopy.S \
 	$(CUR_DIR)/uthread.c \
 	$(CUR_DIR)/uthread_mmu.c \
 
