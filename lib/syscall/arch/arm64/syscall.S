@@ -43,7 +43,7 @@ ldp \ra, \rb, [sp], #16
  */
 FUNCTION (arm64_syscall)
 	push	x0, x30
-	ldr	x12, [x0, #(12 << 3)]
+	ldr	w12, [x0, #(12 << 3)]
 
 	msr	daifclr, #DAIF_MASK_IAF
 
