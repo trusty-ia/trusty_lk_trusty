@@ -25,23 +25,11 @@
 #ifndef __ARM_ARCH_UTHREAD_H
 #define __ARM_ARCH_UTHREAD_H
 
-#ifdef ARM_WITH_NEON
-typedef struct arch_fpctx {
-	uint32_t fpexc;
-	uint64_t dregs[32];
-	uint32_t fpscr;
-	bool valid;
-} fpctx_t;
-#endif
-
 struct uthread;
 
 struct arch_uthread
 {
 	uint32_t asid;
-#ifdef ARM_WITH_NEON
-	fpctx_t *fpctx;
-#endif
 	struct uthread *uthread;
 };
 

@@ -71,9 +71,6 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 		arm_write_contextidr(new_ut->arch.asid);
 		ISB;
 		arm_write_ttbr0(pgd | MMU_TTBRx_FLAGS);
-#ifdef ARM_WITH_NEON
-		arm_write_fpexc(new_ut->arch.fpctx->fpexc);
-#endif
 		ISB;
 	}
 }
@@ -84,20 +81,11 @@ status_t arch_uthread_create(struct uthread *ut)
 
 	ut->arch.asid = ut->id;
 	ut->arch.uthread = ut;
-#ifdef ARM_WITH_NEON
-	ut->arch.fpctx = calloc(1, sizeof(fpctx_t));
-	if (!ut->arch.fpctx)
-		err = ERR_NO_MEMORY;
-#endif
 	return err;
 }
 
 void arch_uthread_free(struct uthread *ut)
 {
-#ifdef ARM_WITH_NEON
-	if (ut->arch.fpctx)
-		free(ut->arch.fpctx);
-#endif
 }
 
 status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
