@@ -107,7 +107,7 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
 	l1_flags = (mp->flags & UTM_NS_MEM) ? MMU_MEMORY_L1_PAGETABLE_NON_SECURE : 0;
 
 	l2_flags = (mp->flags & UTM_W) ? MMU_MEMORY_L2_AP_P_RW_U_RW :
-					  MMU_MEMORY_L2_AP_P_RW_U_RO;
+					  MMU_MEMORY_L2_AP_P_RO_U_RO;
 	if (mp->flags & UTM_IO) {
 		l2_flags |= MMU_MEMORY_L2_TYPE_STRONGLY_ORDERED;
 	} else {
@@ -300,7 +300,7 @@ status_t arch_uthread_translate_map(struct uthread *ut_target,
 
 	l1_flags = (flags & UTM_NS_MEM) ? MMU_MEMORY_L1_PAGETABLE_NON_SECURE : 0;
 	l2_flags = (flags & UTM_W) ? MMU_MEMORY_L2_AP_P_RW_U_RW :
-				     MMU_MEMORY_L2_AP_P_RW_U_RO;
+				     MMU_MEMORY_L2_AP_P_RO_U_RO;
 
 	vs = vaddr_src;
 	vt = vaddr_target;
