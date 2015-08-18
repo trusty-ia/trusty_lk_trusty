@@ -75,6 +75,82 @@ FUNCTION(mmutest_arch_rodata_ro)
 	.long	0x1
 
 .section .text
+
+/**
+ * int mmutest_arch_store_uint32(uint32_t *ptr, bool user) - Test if ptr is writeable
+ * @ptr:  Memory location to test
+ * @user: Use unpriviledged store
+ *
+ * Returns ERR_FAULT if ptr is not writeable
+ * Returns ERR_GENERIC if ptr is not readable
+ * Returns 2 if write does not fault, but data is lost on readback from memory
+ * Returns 1 if write does not fault, but data is lost on readback from cache
+ * Returns 0 if ptr is writable
+ */
+FUNCTION(mmutest_arch_store_uint32)
+	cbnz	x1, .Lmmutest_arch_store_uint32_user
+
+	set_fault_handler	.Lmmutest_setup_fault
+	ldr	x1, [x0]
+	neg	x1, x1
+
+	set_fault_handler	.Lmmutest_fault
+	str	x1, [x0]
+
+	b	.Lmmutest_arch_store_uint32_str_done
+
+.Lmmutest_arch_store_uint32_user:
+	set_fault_handler	.Lmmutest_setup_fault
+	ldtr	x1, [x0]
+	neg	x1, x1
+
+	set_fault_handler	.Lmmutest_fault
+	sttr	x1, [x0]
+
+.Lmmutest_arch_store_uint32_str_done:
+
+	dmb	sy
+
+	ldr	x2, [x0]
+	cmp	x1, x2
+	bne	.Lmmutest_arch_store_uint32_cache_read_mismatch
+
+	push	x0, x1
+	push	x2, x30
+	mov	x1, #4
+	bl	arch_clean_invalidate_cache_range
+	pop	x2, x30
+	pop	x0, x1
+
+	ldr	x2, [x0]
+	cmp	x1, x2
+	bne	.Lmmutest_arch_store_uint32_memory_mismatch
+
+	mov	x0, xzr
+	ret
+
+.Lmmutest_arch_store_uint32_cache_read_mismatch:
+	mov	x0, #1
+	ret
+
+.Lmmutest_arch_store_uint32_memory_mismatch:
+	mov	x0, #2
+	ret
+
+/**
+ * int mmutest_arch_nop(int ret) - Return ret
+ *
+ * Returns ret if run from executable page.
+ * Does not return if run from non-executable page.
+ */
+FUNCTION(mmutest_arch_nop)
+	ret
+FUNCTION(mmutest_arch_nop_end)
+
+.Lmmutest_setup_fault:
+	mov	x0, #ERR_GENERIC
+	ret
+
 .Lmmutest_fault:
 	mov	x0, #ERR_FAULT
 	ret

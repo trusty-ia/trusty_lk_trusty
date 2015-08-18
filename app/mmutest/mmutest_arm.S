@@ -76,6 +76,68 @@ FUNCTION(mmutest_arch_rodata_ro)
 	.long	0x1
 
 .section .text
+
+/**
+ * int mmutest_arch_store_uint32(uint32_t *ptr, bool user) - Test if ptr is writeable
+ * @ptr:  Memory location to test
+ * @user: Use unpriviledged store
+ *
+ * Returns ERR_FAULT if ptr is not writeable
+ * Returns ERR_GENERIC if ptr is not readable
+ * Returns 2 if write does not fault, but data is lost on readback from memory
+ * Returns 1 if write does not fault, but data is lost on readback from cache
+ * Returns 0 if ptr is writable
+ */
+FUNCTION(mmutest_arch_store_uint32)
+	cmp	r1, #0
+
+	set_fault_handler	.Lmmutest_setup_fault
+	ldreq	r1, [r0]
+
+	set_fault_handler	.Lmmutest_setup_fault
+	ldrnet	r1, [r0]
+
+	neg	r1, r1
+
+	set_fault_handler	.Lmmutest_fault
+	streq	r1, [r0]
+
+	set_fault_handler	.Lmmutest_fault
+	strnet	r1, [r0]
+
+	dmb
+
+	ldr	r2, [r0]
+	cmp	r1, r2
+	movne	r0, #1
+	bxne	lr
+
+	push	{r0, r1, r2, lr}
+	mov	r1, #4
+	blx	arch_clean_invalidate_cache_range
+	pop	{r0, r1, r2, lr}
+
+	ldr	r2, [r0]
+	cmp	r1, r2
+	moveq	r0, #0
+	movne	r0, #2
+
+	bx	lr
+
+/**
+ * int mmutest_arch_nop(int ret) - Return ret
+ *
+ * Returns ret if run from executable page.
+ * Does not return if run from non-executable page.
+ */
+FUNCTION(mmutest_arch_nop)
+	bx	lr
+FUNCTION(mmutest_arch_nop_end)
+
+.Lmmutest_setup_fault:
+	mov	r0, #ERR_GENERIC
+	bx	lr
+
 .Lmmutest_fault:
 	mov	r0, #ERR_FAULT
 	bx	lr
