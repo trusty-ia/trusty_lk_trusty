@@ -117,10 +117,20 @@ enum tipc_ctrl_msg_types {
 	TIPC_CTRL_MSGTYPE_DISC_REQ,
 };
 
-struct tipc_ctrl_msg {
+/*
+ *   TIPC control message consists of common tipc_ctrl_msg_hdr
+ *   immediately followed by message specific body which also
+ *   could be empty.
+ *
+ *   struct tipc_ctrl_msg {
+ *      struct tipc_ctrl_msg_hdr hdr;
+ *      uint8_t  body[0];
+ *   } __PACKED;
+ *
+ */
+struct tipc_ctrl_msg_hdr {
 	uint32_t type;
 	uint32_t body_len;
-	uint8_t  body[0];
 } __PACKED;
 
 struct tipc_conn_req_body {
@@ -206,10 +216,13 @@ static void free_local_addr(struct tipc_dev *dev, uint32_t local)
 
 static int _go_online(struct tipc_dev *dev)
 {
-	struct tipc_ctrl_msg msg;
+	struct {
+		struct tipc_ctrl_msg_hdr hdr;
+		/* body is empty */
+	} msg;
 
-	msg.type = TIPC_CTRL_MSGTYPE_GO_ONLINE;
-	msg.body_len  = 0;
+	msg.hdr.type = TIPC_CTRL_MSGTYPE_GO_ONLINE;
+	msg.hdr.body_len  = 0;
 
 	return tipc_send_buf(dev, TIPC_CTRL_ADDR, TIPC_CTRL_ADDR,
 	                     &msg, sizeof(msg), true);
@@ -242,7 +255,7 @@ static int send_conn_rsp(struct tipc_dev *dev, uint32_t local,
                          uint32_t msg_sz, uint32_t msg_cnt)
 {
 	struct {
-		struct tipc_ctrl_msg hdr;
+		struct tipc_ctrl_msg_hdr  hdr;
 		struct tipc_conn_rsp_body body;
 	} msg;
 
@@ -262,7 +275,7 @@ static int send_conn_rsp(struct tipc_dev *dev, uint32_t local,
 static int send_disc_req(struct tipc_dev *dev, uint32_t local, uint32_t remote)
 {
 	struct {
-		struct tipc_ctrl_msg hdr;
+		struct tipc_ctrl_msg_hdr  hdr;
 		struct tipc_disc_req_body body;
 	} msg;
 
@@ -276,16 +289,19 @@ static int send_disc_req(struct tipc_dev *dev, uint32_t local, uint32_t remote)
 }
 
 static int handle_conn_req(struct tipc_dev *dev, uint32_t remote,
-                           const struct tipc_conn_req_body *req)
+                           const volatile struct tipc_conn_req_body *ns_req)
 {
 	int err;
 	uint32_t local = 0;
 	handle_t *chan = NULL;
+	struct tipc_conn_req_body req;
 
 	LTRACEF("remote %u\n", remote);
 
+	strncpy(req.name, (const char *)ns_req->name, sizeof(req.name));
+
 	/* open ipc channel */
-	err = ipc_port_connect_async(dev->uuid, req->name, sizeof(req->name),
+	err = ipc_port_connect_async(dev->uuid, req.name, sizeof(req.name),
 				     0, &chan);
 	if (err == NO_ERROR) {
 		mutex_acquire(&dev->ept_lock);
@@ -316,11 +332,12 @@ static int handle_conn_req(struct tipc_dev *dev, uint32_t remote,
 }
 
 static int handle_disc_req(struct tipc_dev *dev, uint32_t remote,
-                           const struct tipc_disc_req_body *req)
+                           const volatile struct tipc_disc_req_body *ns_req)
 {
 	struct tipc_ept *ept;
+	uint32_t target = ns_req->target;
 
-	LTRACEF("remote %u: target %u\n", remote, req->target);
+	LTRACEF("remote %u: target %u\n", remote, target);
 
 	mutex_acquire(&dev->ept_lock);
 
@@ -329,7 +346,7 @@ static int handle_disc_req(struct tipc_dev *dev, uint32_t remote,
 	 * is a scenario when it might not be valid. Nevertheless,
 	 * we can try to use it first before doing full lookup.
 	 */
-	ept = lookup_ept(dev, req->target);
+	ept = lookup_ept(dev, target);
 	if (!ept || ept->remote != remote) {
 		ept = NULL;
 		/* do full search: TODO search handle list */
@@ -366,54 +383,59 @@ static int handle_disc_req(struct tipc_dev *dev, uint32_t remote,
 }
 
 static int handle_ctrl_msg(struct tipc_dev *dev, uint32_t remote,
-                           const void *data, size_t msg_len)
+                           const volatile void *ns_data, size_t msg_len)
 {
-	const struct tipc_ctrl_msg *msg = data;
+	uint32_t msg_type;
+	size_t   msg_body_len;
+	const volatile void *ns_msg_body;
+	const volatile struct tipc_ctrl_msg_hdr *ns_msg_hdr = ns_data;
 
-	DEBUG_ASSERT(msg);
+	DEBUG_ASSERT(ns_data);
 
 	/* do some sanity checks */
-	if (msg_len < sizeof(*msg)) {
-		LTRACEF("%s: remote=%u: ttl_len=%u\n",
+	if (msg_len < sizeof(struct tipc_ctrl_msg_hdr)) {
+		LTRACEF("%s: remote=%u: ttl_len=%zu\n",
 		        "malformed msg", remote, msg_len);
 		return ERR_NOT_VALID;
 	}
 
-	if (sizeof(*msg) + msg->body_len != msg_len)
+	msg_type = ns_msg_hdr->type;
+	msg_body_len = ns_msg_hdr->body_len;
+	ns_msg_body = ns_data + sizeof(struct tipc_ctrl_msg_hdr);
+
+	if (sizeof(struct tipc_ctrl_msg_hdr) + msg_body_len != msg_len)
 		goto err_mailformed_msg;
 
-	switch (msg->type) {
+	switch (msg_type) {
 	case TIPC_CTRL_MSGTYPE_CONN_REQ:
-		if (msg->body_len != sizeof(struct tipc_conn_req_body))
+		if (msg_body_len != sizeof(struct tipc_conn_req_body))
 			break;
-		return handle_conn_req(dev, remote,
-			(const struct tipc_conn_req_body *)msg->body);
+		return handle_conn_req(dev, remote, ns_msg_body);
 
 	case TIPC_CTRL_MSGTYPE_DISC_REQ:
-		if (msg->body_len != sizeof(struct tipc_disc_req_body))
+		if (msg_body_len != sizeof(struct tipc_disc_req_body))
 			break;
-		return handle_disc_req(dev, remote,
-			(const struct tipc_disc_req_body *)msg->body);
+		return handle_disc_req(dev, remote, ns_msg_body);
 
 	default:
 		break;
 	}
 
 err_mailformed_msg:
-	LTRACEF("%s: remote=%u: ttl_len=%u msg_type=%u msg_len=%u\n",
-		"malformed msg", remote, msg_len, msg->type, msg->body_len);
+	LTRACEF("%s: remote=%u: ttl_len=%zu msg_type=%u msg_len=%u\n",
+		"malformed msg", remote, msg_len, msg_type, msg_body_len);
 	return ERR_NOT_VALID;
 }
 
 static int handle_chan_msg(struct tipc_dev *dev, uint32_t remote, uint32_t local,
-                           void *data, size_t len)
+                           const volatile void *ns_data, size_t len)
 {
 	struct tipc_ept *ept;
 	int ret = ERR_NOT_FOUND;
 	ipc_msg_kern_t msg = {
 		.iov		= (iovec_kern_t []) {
 			[0]	= {
-				.base	= data,
+				.base	= (void *)ns_data,
 				.len	= len,
 			},
 		},
@@ -434,7 +456,11 @@ static int handle_chan_msg(struct tipc_dev *dev, uint32_t remote, uint32_t local
 
 static int handle_rx_msg(struct tipc_dev *dev, struct vqueue_buf *buf)
 {
-	struct tipc_hdr *hdr;
+	const volatile struct tipc_hdr *ns_hdr;
+	const volatile void *ns_data;
+	size_t ns_data_len;
+	uint32_t  src_addr;
+	uint32_t  dst_addr;
 
 	DEBUG_ASSERT(dev);
 	DEBUG_ASSERT(buf);
@@ -469,21 +495,31 @@ static int handle_rx_msg(struct tipc_dev *dev, struct vqueue_buf *buf)
 	}
 
 	/* check message size */
-	hdr = buf->in_iovs.iovs[0].base;
-	if (buf->in_iovs.iovs[0].len  < sizeof(struct tipc_hdr) ||
-	    hdr->len + sizeof(struct tipc_hdr) != buf->in_iovs.iovs[0].len) {
-		LTRACEF("malformed message len %u msglen %u\n",
-		         hdr->len, buf->in_iovs.iovs[0].len);
+	if (buf->in_iovs.iovs[0].len < sizeof(struct tipc_hdr)) {
+		LTRACEF("msg too short %zu\n", buf->in_iovs.iovs[0].len);
 		ret = ERR_INVALID_ARGS;
-	} else {
-		if (hdr->dst == TIPC_CTRL_ADDR) {
-			ret = handle_ctrl_msg(dev, hdr->src,
-					      hdr->data, hdr->len);
-		} else {
-			ret = handle_chan_msg(dev, hdr->src, hdr->dst,
-					      hdr->data, hdr->len);
-		}
+		goto done;
 	}
+
+	ns_hdr  = buf->in_iovs.iovs[0].base;
+	ns_data = buf->in_iovs.iovs[0].base + sizeof(struct tipc_hdr);
+	ns_data_len = ns_hdr->len;
+	src_addr = ns_hdr->src;
+	dst_addr = ns_hdr->dst;
+
+	if (ns_data_len + sizeof(struct tipc_hdr) != buf->in_iovs.iovs[0].len) {
+		LTRACEF("malformed message len %zu msglen %zu\n",
+			ns_data_len, buf->in_iovs.iovs[0].len);
+		ret = ERR_INVALID_ARGS;
+		goto done;
+	}
+
+	if (dst_addr == TIPC_CTRL_ADDR)
+		ret = handle_ctrl_msg(dev, src_addr, ns_data, ns_data_len);
+	else
+		ret = handle_chan_msg(dev, src_addr, dst_addr, ns_data, ns_data_len);
+
+done:
 	vqueue_unmap_iovs(&buf->in_iovs);
 
 	return ret;
