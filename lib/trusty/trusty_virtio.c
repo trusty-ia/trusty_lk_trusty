@@ -183,13 +183,13 @@ ssize_t virtio_get_description(ns_paddr_t buf_pa, ns_size_t buf_sz,
 	struct vdev *vd;
 	struct trusty_virtio_bus *vb = &_virtio_bus;
 
-	LTRACEF("descr_buf: %zu bytes @ 0x%llx\n", buf_sz, buf_pa);
+	LTRACEF("descr_buf: %u bytes @ 0x%llx\n", buf_sz, buf_pa);
 
 	finalize_vdev_registery();
 
-	if (buf_sz < vb->descr_size) {
-		LTRACEF("buffer (%u bytes) is too small (%u needed)\n",
-			 buf_sz, vb->descr_size);
+	if ((size_t)buf_sz < vb->descr_size) {
+		LTRACEF("buffer (%zu bytes) is too small (%zu needed)\n",
+			 (size_t)buf_sz, vb->descr_size);
 		return ERR_NOT_ENOUGH_BUFFER;
 	}
 
@@ -236,7 +236,7 @@ status_t virtio_start(ns_paddr_t ns_descr_pa, ns_size_t descr_sz,
 	void *ns_descr_va = NULL;
 	struct trusty_virtio_bus *vb = &_virtio_bus;
 
-	LTRACEF("%zu bytes @ 0x%llx\n", descr_sz, ns_descr_pa);
+	LTRACEF("%u bytes @ 0x%llx\n", descr_sz, ns_descr_pa);
 
 	oldstate = atomic_cmpxchg(&vb->state,
 				  VIRTIO_BUS_STATE_IDLE,
@@ -248,9 +248,9 @@ status_t virtio_start(ns_paddr_t ns_descr_pa, ns_size_t descr_sz,
 		return ERR_BAD_STATE;
 	}
 
-	if (descr_sz != vb->descr_size) {
-		LTRACEF("unexpected descriptor size (%d vs. %d)\n",
-			descr_sz, vb->descr_size);
+	if ((size_t)descr_sz != vb->descr_size) {
+		LTRACEF("unexpected descriptor size (%zd vs. %zd)\n",
+			(size_t)descr_sz, vb->descr_size);
 		ret = ERR_INVALID_ARGS;
 		goto err_bad_params;
 	}
@@ -298,7 +298,7 @@ status_t virtio_stop(ns_paddr_t descr_pa, ns_size_t descr_sz, uint descr_mmu_fla
 	struct vdev *vd;
 	struct trusty_virtio_bus *vb = &_virtio_bus;
 
-	LTRACEF("%zu bytes @ 0x%llx\n", descr_sz, descr_pa);
+	LTRACEF("%u bytes @ 0x%llx\n", descr_sz, descr_pa);
 
 	oldstate = atomic_cmpxchg(&vb->state,
 				  VIRTIO_BUS_STATE_ACTIVE,

@@ -422,7 +422,7 @@ static int handle_ctrl_msg(struct tipc_dev *dev, uint32_t remote,
 	}
 
 err_mailformed_msg:
-	LTRACEF("%s: remote=%u: ttl_len=%zu msg_type=%u msg_len=%u\n",
+	LTRACEF("%s: remote=%u: ttl_len=%zu msg_type=%u msg_len=%zu\n",
 		"malformed msg", remote, msg_len, msg_type, msg_body_len);
 	return ERR_NOT_VALID;
 }
@@ -1055,7 +1055,7 @@ tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
 	/* the first iovec should be large enough to hold header */
 	if (sizeof(struct tipc_hdr) > buf.out_iovs.iovs[0].len) {
 		/* not enough space to even place header */
-		LTRACEF("buf is too small (%d < %d)\n",
+		LTRACEF("buf is too small (%zu < %zu)\n",
 		         buf.out_iovs.iovs[0].len, ttl_len);
 		ret = ERR_NOT_ENOUGH_BUFFER;
 		goto done;
@@ -1076,7 +1076,7 @@ tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
 		if (ttl_len > buf.out_iovs.iovs[0].len) {
 			/* not enough space to put the whole message
 			   so it will be truncated */
-			LTRACEF("buf is too small (%d < %d)\n",
+			LTRACEF("buf is too small (%zu < %zu)\n",
 			         buf.out_iovs.iovs[0].len, ttl_len);
 			data_len = buf.out_iovs.iovs[0].len -
 			           sizeof(struct tipc_hdr);
