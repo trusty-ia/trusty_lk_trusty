@@ -207,17 +207,15 @@ static void _handle_list_del_locked(handle_list_t *hlist, handle_t *handle)
 	/* remove item from list */
 	list_delete(&handle->hlist_node);
 
-	/* check if somebody is waiting on this handle */
-	mutex_acquire(&handle->wait_event_lock);
-	if (handle->wait_event) {
+	/* check if somebody is waiting on this handle list */
+	if (hlist->wait_event) {
+		/* finish waiting */
+		_finish_wait_handle(handle);
 		if (list_is_empty(&hlist->handles)) {
 			/* wakeup waiter if list is now empty */
-			event_signal(handle->wait_event, true);
+			event_signal(hlist->wait_event, true);
 		}
-		handle->wait_event = NULL;
 	}
-	mutex_release(&handle->wait_event_lock);
-
 	handle_decref(handle);
 }
 
