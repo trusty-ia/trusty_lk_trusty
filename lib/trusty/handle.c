@@ -185,6 +185,16 @@ void handle_list_add(handle_list_t *hlist, handle_t *handle)
 	handle_incref(handle);
 	mutex_acquire(&hlist->lock);
 	list_add_tail(&hlist->handles, &handle->hlist_node);
+	if (hlist->wait_event) {
+		/* somebody is waiting on list */
+		_prepare_wait_handle(hlist->wait_event, handle);
+
+		/* call poll to check if it is already signaled */
+		uint32_t event = handle->ops->poll(handle);
+		if (event) {
+			handle_notify(handle);
+		}
+	}
 	mutex_release(&hlist->lock);
 }
 
@@ -256,11 +266,12 @@ static void _hlist_finish_wait_locked(handle_list_t *hlist, handle_t *last)
  *  handle until the ready one is found and return it to caller.
  *  Undo prepare op if ready handle is found or en error occured.
  */
-static int _hlist_do_poll_locked(event_t *ev, handle_list_t *hlist,
-				 handle_t **handle_ptr, uint32_t *event_ptr,
-				 bool prepare)
+static int _hlist_do_poll_locked(handle_list_t *hlist, handle_t **handle_ptr,
+				 uint32_t *event_ptr, bool prepare)
 {
 	int ret;
+
+	DEBUG_ASSERT(hlist->wait_event);
 
 	if (list_is_empty(&hlist->handles))
 		return ERR_NOT_FOUND;  /* no handles in the list */
@@ -269,7 +280,7 @@ static int _hlist_do_poll_locked(event_t *ev, handle_list_t *hlist,
 	handle_t *last_prep = NULL;
 	list_for_every_entry(&hlist->handles, next, handle_t, hlist_node) {
 		if (prepare) {
-			ret = _prepare_wait_handle(ev, next);
+			ret = _prepare_wait_handle(hlist->wait_event, next);
 			if (ret)
 				break;
 			last_prep = next;
@@ -311,9 +322,10 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 
 	mutex_acquire(&hlist->lock);
 
-	ret = _hlist_do_poll_locked(&ev, hlist,
-				    handle_ptr, event_ptr,
-				    true);
+	DEBUG_ASSERT(hlist->wait_event == NULL);
+
+	hlist->wait_event = &ev;
+	ret = _hlist_do_poll_locked(hlist, handle_ptr, event_ptr, true);
 	if (ret < 0)
 		goto err_do_poll;
 
@@ -328,9 +340,8 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 				break;
 
 			/* poll again */
-			ret = _hlist_do_poll_locked(&ev, hlist,
-						    handle_ptr, event_ptr,
-						    false);
+			ret = _hlist_do_poll_locked(hlist, handle_ptr,
+						    event_ptr, false);
 		} while (!ret);
 
 		_hlist_finish_wait_locked(hlist, NULL);
@@ -352,6 +363,7 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 	}
 
 err_do_poll:
+	hlist->wait_event = NULL;
 	mutex_release(&hlist->lock);
 	event_destroy(&ev);
 	return ret;

@@ -72,6 +72,7 @@ struct handle_ops {
 typedef struct handle_list {
 	struct list_node	handles;
 	mutex_t			lock;
+	event_t			*wait_event;
 } handle_list_t;
 
 #define HANDLE_LIST_INITIAL_VALUE(hs) \
