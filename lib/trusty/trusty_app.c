@@ -558,7 +558,7 @@ void trusty_app_init(void)
 	trusty_app_image_end = (char *)&__trusty_app_end;
 	trusty_app_image_size = (trusty_app_image_end - trusty_app_image_start);
 
-	ASSERT(!((uint32_t)trusty_app_image_start & PAGE_MASK));
+	ASSERT(!((uintptr_t)trusty_app_image_start & PAGE_MASK));
 
 	finalize_registration();
 

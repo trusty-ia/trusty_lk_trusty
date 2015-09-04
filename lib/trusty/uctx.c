@@ -306,7 +306,7 @@ long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
 
 	/* got an event */
 	tmp_event.handle = handle_id;
-	tmp_event.cookie = (user_addr_t)handle_get_cookie(handle);
+	tmp_event.cookie = (user_addr_t)(uintptr_t)handle_get_cookie(handle);
 
 	status_t status = copy_to_user(user_event, &tmp_event, sizeof(tmp_event));
 	if (status) {
@@ -350,7 +350,7 @@ long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
 	DEBUG_ASSERT(handle); /* there should be a handle */
 
 	tmp_event.handle = _handle_to_id_locked(ctx, handle);
-	tmp_event.cookie = (user_addr_t)handle_get_cookie(handle);
+	tmp_event.cookie = (user_addr_t)(uintptr_t)handle_get_cookie(handle);
 
 	/* drop the reference that was taken by wait_any */
 	handle_decref(handle);
@@ -395,7 +395,7 @@ long __SYSCALL sys_set_cookie(uint32_t handle_id, user_addr_t cookie)
 	if (ret != NO_ERROR)
 		return ret;
 
-	handle_set_cookie(handle, (void *)cookie);
+	handle_set_cookie(handle, (void *)(uintptr_t)cookie);
 
 	handle_decref(handle);
 	return NO_ERROR;

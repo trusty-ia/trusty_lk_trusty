@@ -86,7 +86,7 @@ static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size)
 	if (!valid_address((vaddr_t)user_ptr, size))
 		return ERR_INVALID_ARGS;
 
-	dwrite((fd == 2) ? INFO : SPEW, (const void *)user_ptr, size);
+	dwrite((fd == 2) ? INFO : SPEW, (const void *)(uintptr_t)user_ptr, size);
 	return size;
 }
 
