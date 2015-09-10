@@ -105,7 +105,7 @@ long sys_brk(u_int brk)
 	trusty_app_t *trusty_app = uthread_get_current()->private_data;
 
 	/* update brk, if within range */
-	if ((brk >= trusty_app->start_brk) && (brk < trusty_app->end_brk)) {
+	if ((brk >= trusty_app->start_brk) && (brk <= trusty_app->end_brk)) {
 		trusty_app->cur_brk = brk;
 	}
 	return (long) trusty_app->cur_brk;
