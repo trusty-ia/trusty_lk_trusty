@@ -91,6 +91,7 @@ includes_header = "#include <%s>\n"
 asm_header = "asm.h"
 
 syscall_stub = """
+.section .text.%(sys_fn)s
 FUNCTION(%(sys_fn)s)
     ldr     r12, =__NR_%(sys_fn)s
     swi     #0
