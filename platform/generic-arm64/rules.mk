@@ -29,8 +29,8 @@ ifeq (false,$(call TOBOOL,$(KERNEL_32BIT)))
 ARCH := arm64
 else
 ARCH := arm
-ARM_CPU := cortex-a15
 endif
+ARM_CPU := armv8-a
 WITH_SMP := 1
 
 MEMBASE ?= $(KERNEL_BASE)
