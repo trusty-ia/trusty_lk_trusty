@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2013-2015, Google, Inc. All rights reserved
+# Copyright (c) 2015 Intel Corporation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files
@@ -21,21 +21,15 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-LOCAL_DIR := $(GET_LOCAL_DIR)
+CUR_DIR := $(GET_LOCAL_DIR)
 
-MODULE := $(LOCAL_DIR)
 
-GLOBAL_INCLUDES += \
-	$(LOCAL_DIR)/include
+ifneq (,$(findstring WITH_LIB_SM_MONITOR=1,$(GLOBAL_DEFINES)))
+ifeq ($(TARGET), pc-x86) || ($(TARGET), generic-x86 || ($(TARGET), generic-x86-64))
 
-MODULE_CFLAGS += -DWITH_LIB_VERSION=1
+	MODULE_SRCS += \
+		       $(CUR_DIR)/monitor.S
+endif
+endif
 
-MODULE_SRCS += \
-	$(LOCAL_DIR)/halt.c \
-	$(LOCAL_DIR)/sm.c \
-	$(LOCAL_DIR)/smcall.c \
-	$(LOCAL_DIR)/ns_mem.c \
-
-include $(LOCAL_DIR)/arch/$(ARCH)/rules.mk
-
-include make/module.mk
+CUR_DIR :=
