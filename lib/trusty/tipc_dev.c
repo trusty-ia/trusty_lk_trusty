@@ -919,12 +919,24 @@ static status_t tipc_dev_probe(struct tipc_dev *dev,
 	for (vring_cnt = 0; vring_cnt < dscr->vdev.num_of_vrings; vring_cnt++) {
 		struct fw_rsc_vdev_vring *vring = &dscr->vrings[vring_cnt];
 
-		LTRACEF(" vring%d: da 0x%08x align %u num %u nid %u\n",
-			vring_cnt, vring->da, vring->align, vring->num,
+		/* on archs with 64 bits phys addresses we store top 32 bits of
+		 * vring phys address in 'reserved' field of vring desriptor structure,
+		 * otherwise it set to 0.
+		 */
+		uint64_t pa64 = ((uint64_t)vring->reserved << 32) | vring->da;
+
+		LTRACEF("vring%d: pa 0x%llx align %u num %u nid %u\n",
+			vring_cnt, pa64, vring->align, vring->num,
 			vring->notifyid);
 
+		if (pa64 != (paddr_t)pa64) {
+			ret = ERR_INVALID_ARGS;
+			LTRACEF("unsupported phys address range\n");
+			goto err_vq_init;
+		}
+
 		ret = vqueue_init(&dev->vqs[vring_cnt],
-				  vring->notifyid, (paddr_t) vring->da,
+				  vring->notifyid, (paddr_t)pa64,
 				  vring->num, vring->align, dev,
 				  notify_cbs[vring_cnt], NULL);
 		if (ret)
