@@ -120,7 +120,7 @@ status_t sm_decode_ns_memory_attr(struct ns_page_info *pinf,
 		if (NS_PTE_AP_RO(pinf->attr))
 			mmu_flags |= ARCH_MMU_FLAG_PERM_RO;
 
-		*pmmu = mmu_flags | ARCH_MMU_FLAG_NS;
+		*pmmu = mmu_flags | ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_PERM_NO_EXECUTE;
 	}
 
 	return NO_ERROR;

@@ -485,9 +485,9 @@ static int handle_rx_msg(struct tipc_dev *dev, struct vqueue_buf *buf)
 		LTRACEF("unexpected out_iovs num %d\n", buf->in_iovs.used);
 	}
 
-	/* map in_iovs, Non-secure, cached, read-only */
-	uint map_flags = ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_CACHED
-	               | ARCH_MMU_FLAG_PERM_RO;
+	/* map in_iovs, Non-secure, no-execute, cached, read-only */
+	uint map_flags = ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_PERM_NO_EXECUTE |
+	                 ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_PERM_RO;
 	int ret = vqueue_map_iovs(&buf->in_iovs, map_flags);
 	if (ret) {
 		TRACEF("failed to map iovs %d\n", ret);
@@ -1073,8 +1073,9 @@ tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
 		goto done;
 	}
 
-	/* map in provided buffers (Non-secure, cached , read-write) */
-	uint map_flags = ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_CACHED;
+	/* map in provided buffers (Non-secure, no-execute, cached, read-write) */
+	uint map_flags = ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_PERM_NO_EXECUTE |
+	                 ARCH_MMU_FLAG_CACHED;
 	ret = vqueue_map_iovs(&buf.out_iovs, map_flags);
 	if (ret == NO_ERROR) {
 		struct tipc_hdr *hdr = buf.out_iovs.iovs[0].base;

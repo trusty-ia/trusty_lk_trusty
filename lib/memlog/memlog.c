@@ -128,7 +128,8 @@ static status_t map_rb(paddr_t pa, size_t sz, vaddr_t *va)
 	size_t mb = 1 << 20;
 	size_t offset;
 	status_t err;
-	unsigned flags = ARCH_MMU_FLAG_CACHED | ARCH_MMU_FLAG_NS;
+	unsigned flags = ARCH_MMU_FLAG_CACHED |
+	                 ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_PERM_NO_EXECUTE;
 
 	offset = pa & (mb - 1);
 	pa = ROUNDDOWN(pa, mb);

@@ -385,7 +385,9 @@ static void sm_init(uint level)
 
 		err = vmm_alloc_physical(vmm_get_kernel_aspace(), "sm",
 				 size, &vptr, PAGE_SIZE_SHIFT, paddr,
-				 0, ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_CACHED);
+				 0,
+				 ARCH_MMU_FLAG_NS | ARCH_MMU_FLAG_PERM_NO_EXECUTE |
+				 ARCH_MMU_FLAG_CACHED);
 		if (!err) {
 			boot_args = (uint8_t *)vptr + offset;
 			boot_args_refcnt++;
