@@ -45,7 +45,8 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/vqueue.c \
 	$(LOCAL_DIR)/smcall.c \
 	$(LOCAL_DIR)/trusty_virtio.c \
-	$(LOCAL_DIR)/tipc_dev.c
+	$(LOCAL_DIR)/tipc_dev.c \
+	$(LOCAL_DIR)/tipc_dev_ql.c
 
 ifneq (true,$(call TOBOOL,$(WITH_CUSTOM_TRUSTY_IPC_CONFIG)))
 MODULE_SRCS += \

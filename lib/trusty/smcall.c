@@ -32,6 +32,7 @@
 #include <lib/sm.h>
 #include <lib/sm/smcall.h>
 
+#include "tipc_dev_ql.h"
 #include "trusty_virtio.h"
 
 #define LOCAL_TRACE 0
@@ -112,6 +113,24 @@ static long trusty_sm_stdcall(smc32_args_t *args)
 
 	case SMC_SC_VDEV_KICK_VQ:
 		res = virtio_kick_vq(args->params[0], args->params[1]);
+		break;
+
+	case SMC_SC_CREATE_QL_TIPC_DEV:
+		res = get_ns_mem_buf(args, &ns_pa, &ns_sz, &ns_mmu_flags);
+		if (res == NO_ERROR)
+			res = ql_tipc_create_device(ns_pa, ns_sz, ns_mmu_flags);
+		break;
+
+	case SMC_SC_SHUTDOWN_QL_TIPC_DEV:
+		res = get_ns_mem_buf(args, &ns_pa, &ns_sz, &ns_mmu_flags);
+		if (res == NO_ERROR)
+			res = ql_tipc_shutdown_device(ns_pa);
+		break;
+
+	case SMC_SC_HANDLE_QL_TIPC_DEV_CMD:
+		res = get_ns_mem_buf(args, &ns_pa, &ns_sz, &ns_mmu_flags);
+		if (res == NO_ERROR)
+			res = ql_tipc_handle_cmd(ns_pa, ns_sz);
 		break;
 
 	default:
