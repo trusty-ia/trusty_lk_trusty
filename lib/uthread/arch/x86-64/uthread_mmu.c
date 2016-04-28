@@ -49,7 +49,8 @@ LK_INIT_HOOK_FLAGS(libuthreadx86mmu, x86_uthread_mmu_init,
 
 static uint64_t *x86_uthread_mmu_alloc_pgtbl()
 {
-    return((u_int *)x86_create_new_cr3());
+    uint64_t ret = ((u_int *)x86_create_new_cr3());
+    return ret;
 }
 
 status_t x86_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
@@ -63,7 +64,7 @@ status_t x86_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
         if (ut->page_table == NULL) {
             dprintf(CRITICAL,
                     "unable to allocate initial page table\n");
-            return(ERR_NO_MEMORY);
+            return ERR_NO_MEMORY;
         }
     }
 
@@ -75,5 +76,6 @@ status_t x86_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
 
 status_t x86_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr)
 {
-    return (x86_mmu_unmap(ut->page_table, vaddr, 1));
+   status_t ret = x86_mmu_unmap(ut->page_table, vaddr, 1);
+   return ret;
 }

@@ -29,21 +29,20 @@
 #define PF_MASK     0x0020
 #define TF_MASK     0x0100
 #define IF_MASK     0x0200
-#define	IOPL_MASK   0x3000
+#define IOPL_MASK   0x3000
 #define NTi_MASK    0x4000
 #define RSVD        0x0002
 
-#define USER_EFLAGS	(IF_MASK|IOPL_MASK|RSVD) /* 0x3202 */
+#define USER_EFLAGS (IF_MASK|IOPL_MASK|RSVD) /* 0x3202 */
 
-/* SYSCALL Handling */
+/* SYSCALL MSRs*/
 #define SYSENTER_CS_MSR    0x174
 #define SYSENTER_ESP_MSR   0x175
 #define SYSENTER_EIP_MSR   0x176
 
 struct uthread;
 
-struct arch_uthread
-{
+struct arch_uthread {
     uint32_t asid;
     vaddr_t kstack;
     struct uthread *uthread;
