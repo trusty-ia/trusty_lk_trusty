@@ -320,6 +320,8 @@ out:
 
 	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
 	                                handle_id, ret);
+
+	thread_yield();
 	return ret;
 }
 
@@ -366,6 +368,8 @@ long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
 out:
 	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
 	                                tmp_event.handle, ret);
+
+	thread_yield();
 	return ret;
 }
 
