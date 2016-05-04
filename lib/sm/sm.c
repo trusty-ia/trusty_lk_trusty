@@ -311,6 +311,19 @@ static void sm_wait_for_smcall(void)
 
 		/* Re-enable interrupts (needed for SMC_SC_NOP) */
 		arch_enable_ints();
+
+#if ENABLE_TRUSTY_SIMICS
+		/* Temporary fix for simics bug.
+		 * Simics does not support interrupt windows vemxit;
+		 * LK call cpuid to trigger vmexit, then pending interrupt
+		 * for LK will be injected by eVmm */
+		__asm__ volatile(
+			"xorq %rax, %rax\n"
+			"xorq %rcx, %rcx\n"
+			"cpuid\n"
+		);
+#endif
+
 	}
 }
 
