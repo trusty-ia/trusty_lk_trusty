@@ -35,6 +35,7 @@
 #include <uthread.h>
 #include <lib/trusty/sys_fd.h>
 #include <lib/trusty/trusty_app.h>
+#include <lib/trusty/trusty_device_info.h>
 
 static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size);
 
@@ -261,3 +262,29 @@ long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
 }
 
 #endif
+
+/*
+** this's a fake base addr, need to replaced by the real IMR base for LK
+** as the design the IMR region for LK will reserved some bytes for ROT
+** and seed storage (size = sizeof(seed_response_t)+sizeof(rot_data_t))
+**/
+#define TOS_IMR1_BASE 0xdeadbeef
+
+long sys_get_device_info(trusty_device_info_t * info)
+{
+    long    ret = 0;
+    trusty_device_info_t *   dev_info = TOS_IMR1_BASE;
+
+    if(!info)
+        return ERR_INVALID_ARGS;
+
+    /* make sure the shared structure are same in tos loader, LK kernel */
+    if(dev_info->size != sizeof(trusty_device_info_t))
+        return ERR_IO;
+
+    ret = copy_to_user(info, dev_info, sizeof(trusty_device_info_t));
+    if (ret != sizeof(trusty_device_info_t))
+        return ERR_IO;
+
+    return NO_ERROR;
+}

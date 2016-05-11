@@ -37,6 +37,7 @@ DEF_SYSCALL(0x8, mmap, long, 4, void* uaddr, uint32_t size, uint32_t flags, uint
 DEF_SYSCALL(0x9, munmap, long, 2, void* uaddr, uint32_t size)
 DEF_SYSCALL(0xa, prepare_dma, long, 4, void* uaddr, uint32_t size, uint32_t flags, void* pmem)
 DEF_SYSCALL(0xb, finish_dma, long, 3, void* uaddr, uint32_t size, uint32_t flags)
+DEF_SYSCALL(0xa0, get_device_info, long, 1, trusty_device_info_t *info)
 
 /* IPC connection establishement syscalls */
 DEF_SYSCALL(0x10, port_create, long, 4, const char *path, uint num_recv_bufs, size_t recv_buf_size, uint32_t flags)
