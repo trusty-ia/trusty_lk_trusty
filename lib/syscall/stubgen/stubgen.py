@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-# Copyright 2013 Google Inc. +All rights reserved.
+# Copyright 2013-2017 Google Inc. +All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files
@@ -56,7 +56,7 @@ Only syscalls with 4 or less arguments are supported.
 """
 
 copyright_header = """/*
- * Copyright (c) 2013 Google Inc. All rights reserved
+ * Copyright (c) 2013-2017 Google Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -103,7 +103,10 @@ syscall_define = "#define __NR_%(sys_fn)s\t\t%(sys_nr)s\n"
 syscall_proto = "%(sys_rt)s %(sys_fn)s (%(sys_args)s);\n"
 
 asm_ifdef = "\n#ifndef ASSEMBLY\n"
-asm_endif = "\n#endif"
+asm_endif = "\n#endif\n"
+
+beg_cdecls = "\n__BEGIN_CDECLS\n"
+end_cdecls = "\n__END_CDECLS\n"
 
 syscall_def = "DEF_SYSCALL"
 
@@ -210,8 +213,8 @@ def process_table(table_file, std_file, stubs_file, verify):
     if std_file is not None:
         with open(std_file, "w") as std:
             std.writelines(copyright_header + autogen_header)
-            std.writelines(define_lines + asm_ifdef)
-            std.writelines(proto_lines + asm_endif)
+            std.writelines(define_lines + asm_ifdef + beg_cdecls)
+            std.writelines(proto_lines + end_cdecls + asm_endif)
 
     if stubs_file is not None:
         with open(stubs_file, "w") as stubs:
