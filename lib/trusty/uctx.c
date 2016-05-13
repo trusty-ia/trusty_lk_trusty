@@ -281,15 +281,15 @@ typedef struct uevent {
  *   wait on single handle specified by handle id
  */
 long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
-                        unsigned long timeout_msecs)
+                        uint32_t timeout_msecs)
 {
 	uctx_t *ctx = current_uctx();
 	handle_t *handle;
 	uevent_t tmp_event;
 	int ret;
 
-	LTRACEF("[%p][%d]: %ld msec\n", uthread_get_current(),
-	                                handle_id, timeout_msecs);
+	LTRACEF("[%p][%d]: %d msec\n", uthread_get_current(),
+	                               handle_id, timeout_msecs);
 
 	ret = uctx_handle_get(ctx, handle_id, &handle);
 	if (ret != NO_ERROR)
@@ -326,15 +326,15 @@ out:
 /*
  *   Wait on any handle existing in user context.
  */
-long __SYSCALL sys_wait_any(user_addr_t user_event, unsigned long timeout_msecs)
+long __SYSCALL sys_wait_any(user_addr_t user_event, uint32_t timeout_msecs)
 {
 	uctx_t *ctx = current_uctx();
 	handle_t *handle;
 	uevent_t tmp_event;
 	int ret;
 
-	LTRACEF("[%p]: %ld msec\n", uthread_get_current(),
-	                            timeout_msecs);
+	LTRACEF("[%p]: %d msec\n", uthread_get_current(),
+	                           timeout_msecs);
 
 	/*
 	 * Get a handle that has a pending event. The returned handle has

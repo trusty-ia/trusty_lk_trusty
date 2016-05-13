@@ -293,8 +293,8 @@ int ipc_port_publish(handle_t *phandle)
  *  On success - returns handle id (small integer) for the new port.
  *  On error   - returns negative error code.
  */
-long __SYSCALL sys_port_create(user_addr_t path, uint num_recv_bufs,
-                               size_t recv_buf_size, uint32_t flags)
+long __SYSCALL sys_port_create(user_addr_t path, uint32_t num_recv_bufs,
+                               uint32_t recv_buf_size, uint32_t flags)
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
@@ -750,7 +750,7 @@ err_find_ports:
 #define DEFAULT_IPC_CONNECT_WARN_TIMEOUT   INFINITE_TIME
 #endif
 
-long __SYSCALL sys_connect(user_addr_t path, uint flags)
+long __SYSCALL sys_connect(user_addr_t path, uint32_t flags)
 {
 	uthread_t *ut = uthread_get_current();
 	trusty_app_t *tapp = ut->private_data;
@@ -947,13 +947,13 @@ err_accept:
 
 #else /* WITH_TRUSTY_IPC */
 
-long __SYSCALL sys_port_create(user_addr_t path, uint num_recv_bufs,
-                               size_t recv_buf_size, uint32_t flags)
+long __SYSCALL sys_port_create(user_addr_t path, uint32_t num_recv_bufs,
+                               uint32_t recv_buf_size, uint32_t flags)
 {
 	return (long) ERR_NOT_SUPPORTED;
 }
 
-long __SYSCALL sys_connect(user_addr_t path, uint flags)
+long __SYSCALL sys_connect(user_addr_t path, uint32_t flags)
 {
 	return (long) ERR_NOT_SUPPORTED;
 }

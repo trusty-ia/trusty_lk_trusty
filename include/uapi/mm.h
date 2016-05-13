@@ -21,8 +21,8 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#ifndef __MM_H
-#define __MM_H
+#ifndef __UAPI_MM_H
+#define __UAPI_MM_H
 
 /*
  * Flags for mmap syscall
@@ -87,4 +87,4 @@ struct dma_pmem {
 #define DMA_FLAG_ALLOW_PARTIAL	(0x1 << 3)
 
 
-#endif /* __MM_H */
+#endif /* __UAPI_MM_H */
