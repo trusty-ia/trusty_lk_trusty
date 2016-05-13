@@ -55,7 +55,7 @@ typedef struct handle {
 	 * handle.
 	 */
 	event_t			*wait_event;
-	mutex_t			wait_event_lock;
+	spin_lock_t		slock;
 
 	struct list_node	hlist_node;
 

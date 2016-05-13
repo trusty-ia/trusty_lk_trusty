@@ -49,7 +49,7 @@ void handle_init(handle_t *handle, struct handle_ops *ops)
 	refcount_init(&handle->refcnt);
 	handle->ops = ops;
 	handle->wait_event = NULL;
-	mutex_init(&handle->wait_event_lock);
+	spin_lock_init(&handle->slock);
 	handle->cookie = NULL;
 	list_clear_node(&handle->hlist_node);
 }
@@ -95,8 +95,9 @@ static int __do_wait(event_t *ev, lk_time_t timeout)
 static int _prepare_wait_handle(event_t *ev, handle_t *handle)
 {
 	int ret = 0;
+	spin_lock_saved_state_t state;
 
-	mutex_acquire(&handle->wait_event_lock);
+	spin_lock_save(&handle->slock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
 	if (unlikely(handle->wait_event)) {
 		LTRACEF("someone is already waiting on handle %p?!\n",
 			handle);
@@ -104,16 +105,18 @@ static int _prepare_wait_handle(event_t *ev, handle_t *handle)
 	} else {
 		handle->wait_event = ev;
 	}
-	mutex_release(&handle->wait_event_lock);
+	spin_unlock_restore(&handle->slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
 	return ret;
 }
 
 static void _finish_wait_handle(handle_t *handle)
 {
+	spin_lock_saved_state_t state;
+
 	/* clear out our event ptr */
-	mutex_acquire(&handle->wait_event_lock);
+	spin_lock_save(&handle->slock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
 	handle->wait_event = NULL;
-	mutex_release(&handle->wait_event_lock);
+	spin_unlock_restore(&handle->slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
 }
 
 int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
@@ -154,19 +157,24 @@ err_prepare_wait:
 	return ret;
 }
 
+static void handle_notify_waiters_locked(handle_t *handle)
+{
+
+	if (handle->wait_event) {
+		LTRACEF("notifying handle %p wait_event %p\n",
+			handle, handle->wait_event);
+		event_signal(handle->wait_event, false);
+	}
+}
+
 void handle_notify(handle_t *handle)
 {
 	DEBUG_ASSERT(handle);
 
-	/* TODO: need to keep track of the number of events posted? */
-
-	mutex_acquire(&handle->wait_event_lock);
-	if (handle->wait_event) {
-		LTRACEF("notifying handle %p wait_event %p\n",
-			handle, handle->wait_event);
-		event_signal(handle->wait_event, true);
-	}
-	mutex_release(&handle->wait_event_lock);
+	spin_lock_saved_state_t state;
+	spin_lock_save(&handle->slock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
+	handle_notify_waiters_locked(handle);
+	spin_unlock_restore(&handle->slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
 }
 
 void handle_list_init(handle_list_t *hlist)
