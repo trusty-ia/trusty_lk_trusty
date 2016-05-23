@@ -72,7 +72,7 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 	}
 
 	if (new_ut) {
-		pgd = kvaddr_to_paddr(new_ut->page_table);
+		pgd = vaddr_to_paddr(new_ut->page_table);
 		ARM64_WRITE_SYSREG(ttbr0_el1, (paddr_t)new_ut->arch.asid << 48 | pgd);
 		if (!old_ut)
 			ARM64_WRITE_SYSREG(tcr_el1, MMU_TCR_FLAGS_USER);
