@@ -246,7 +246,7 @@ static status_t init_brk(trusty_app_t *trusty_app)
 
 	vaddr = trusty_app->end_brk;
 	status = uthread_map_contig(trusty_app->ut, &vaddr,
-			     kvaddr_to_paddr(heap),
+			     vaddr_to_paddr(heap),
 			     trusty_app->props.min_heap_size,
 			     UTM_W | UTM_R | UTM_FIXED,
 			     UT_MAP_ALIGN_4KB);
@@ -307,7 +307,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 		       !(prg_hdr->p_offset & PAGE_MASK));
 
 		size_t size = (prg_hdr->p_memsz + PAGE_MASK) & ~PAGE_MASK;
-		paddr_t paddr = kvaddr_to_paddr(trusty_app_image + prg_hdr->p_offset);
+		paddr_t paddr = vaddr_to_paddr(trusty_app_image + prg_hdr->p_offset);
 		vaddr_t vaddr = prg_hdr->p_vaddr;
 		u_int flags = PF_TO_UTM_FLAGS(prg_hdr->p_flags) | UTM_FIXED;
 
