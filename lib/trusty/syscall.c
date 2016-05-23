@@ -86,12 +86,20 @@ static bool valid_address(vaddr_t addr, u_int size)
 /* handle stdout/stderr */
 static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size)
 {
+	size_t ret;
+
 	/* check buffer is in task's address space */
 	if (!valid_address((vaddr_t)user_ptr, size))
 		return ERR_INVALID_ARGS;
 
-	dwrite((fd == 2) ? INFO : SPEW, (const void *)(uintptr_t)user_ptr, size);
-	return size;
+	if (((fd == 2) ? INFO : SPEW) > LK_DEBUGLEVEL) {
+		ret = size;
+	} else {
+		ret = fwrite((const void *)(uintptr_t)user_ptr, 1, size,
+		             (fd == 2) ? stderr : stdout);
+	}
+
+	return ret;
 }
 
 long sys_write(uint32_t fd, user_addr_t user_ptr, uint32_t size)
