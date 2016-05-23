@@ -23,6 +23,8 @@
 
 LOCAL_DIR := $(GET_LOCAL_DIR)
 
+EXTRA_LINKER_SCRIPTS += $(LOCAL_DIR)/trusty_apps.ld
+
 MODULE := $(LOCAL_DIR)
 
 MODULE_SRCS := \
