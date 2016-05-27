@@ -45,8 +45,9 @@
  * syscall whether it passes in a single struct or an array.
  */
 struct dma_pmem {
-	paddr_t paddr;
+	uint64_t paddr;
 	uint32_t size;
+	uint32_t pad;
 };
 
 /*
