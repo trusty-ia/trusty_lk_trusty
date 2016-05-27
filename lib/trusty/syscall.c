@@ -197,10 +197,10 @@ long sys_munmap(user_addr_t uaddr, uint32_t size)
 	trusty_app_t *trusty_app = uthread_get_current()->private_data;
 
 	/*
-	 * uthread_unmap always unmaps whole region.
+	 * vmm_free_region always unmaps whole region.
 	 * TBD: Add support to unmap partial region when there's use case.
 	 */
-	return uthread_unmap(trusty_app->ut, uaddr, size);
+	return vmm_free_region_etc(trusty_app->ut->aspace, uaddr, size, 0);
 }
 
 #if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
@@ -208,23 +208,22 @@ long sys_munmap(user_addr_t uaddr, uint32_t size)
 long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
 		user_addr_t pmem)
 {
-	uthread_t *current = uthread_get_current();
 	struct dma_pmem kpmem;
 	uint32_t mapped_size = 0;
 	uint32_t entries = 0;
 	long ret;
+	vaddr_t vaddr = uaddr;
 
 	LTRACEF("uaddr 0x%x, size 0x%x, flags 0x%x, pmem 0x%x\n",
 	        uaddr, size, flags, pmem);
 
-	if (size == 0 || !valid_address((vaddr_t)uaddr, size))
+	if (size == 0 || !valid_address(vaddr, size))
 		return ERR_INVALID_ARGS;
 
 	do {
-		ret = uthread_virt_to_phys(current,
-				(vaddr_t)uaddr + mapped_size, &kpmem.paddr);
-		if (ret != NO_ERROR)
-			return ret;
+		kpmem.paddr = vaddr_to_paddr((void *)(vaddr + mapped_size));
+		if (!kpmem.paddr)
+			return ERR_INVALID_ARGS;
 
 		kpmem.size = MIN(size - mapped_size,
 			PAGE_SIZE - (kpmem.paddr & (PAGE_SIZE - 1)));
@@ -241,9 +240,9 @@ long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
 	} while (mapped_size < size && (flags & DMA_FLAG_MULTI_PMEM));
 
 	if (flags & DMA_FLAG_FROM_DEVICE)
-		arch_clean_invalidate_cache_range(uaddr, mapped_size);
+		arch_clean_invalidate_cache_range(vaddr, mapped_size);
 	else
-		arch_clean_cache_range(uaddr, mapped_size);
+		arch_clean_cache_range(vaddr, mapped_size);
 
 	if (!(flags & DMA_FLAG_ALLOW_PARTIAL) && mapped_size != size)
 		return ERR_BAD_LEN;

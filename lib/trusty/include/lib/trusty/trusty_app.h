@@ -32,10 +32,6 @@
 
 #include <lib/trusty/uuid.h>
 
-#define PF_TO_UTM_FLAGS(x) ((((x) & PF_R) ? UTM_R : 0) | \
-			    (((x) & PF_W) ? UTM_W : 0) | \
-			    (((x) & PF_X) ? UTM_X : 0))
-
 typedef struct
 {
 	uuid_t		uuid;

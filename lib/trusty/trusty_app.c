@@ -225,7 +225,6 @@ static status_t init_brk(trusty_app_t *trusty_app)
 {
 	status_t status;
 	vaddr_t vaddr;
-	void *heap;
 
 	trusty_app->cur_brk = trusty_app->start_brk;
 
@@ -234,20 +233,15 @@ static status_t init_brk(trusty_app_t *trusty_app)
 	    trusty_app->props.min_heap_size)
 		return NO_ERROR;
 
-	heap = memalign(PAGE_SIZE, trusty_app->props.min_heap_size);
-	if (heap == 0)
-		return ERR_NO_MEMORY;
-	memset(heap, 0, trusty_app->props.min_heap_size);
-
 	vaddr = trusty_app->end_brk;
-	status = uthread_map_contig(trusty_app->ut, &vaddr,
-			     vaddr_to_paddr(heap),
-			     trusty_app->props.min_heap_size,
-			     UTM_W | UTM_R | UTM_FIXED,
-			     UT_MAP_ALIGN_4KB);
-	if (status != NO_ERROR || vaddr != trusty_app->end_brk) {
+	status = vmm_alloc(trusty_app->ut->aspace, "heap",
+			   trusty_app->props.min_heap_size, (void**)&vaddr,
+			   PAGE_SIZE_SHIFT, VMM_FLAG_VALLOC_SPECIFIC,
+			   ARCH_MMU_FLAG_PERM_USER | ARCH_MMU_FLAG_PERM_NO_EXECUTE);
+	/* TODO: make sure allocated memory does not leak kernel data */
+	assert(vaddr == trusty_app->end_brk);
+	if (status != NO_ERROR) {
 		dprintf(CRITICAL, "cannot map brk\n");
-		free(heap);
 		return ERR_NO_MEMORY;
 	}
 
@@ -304,10 +298,18 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 		size_t size = (prg_hdr->p_memsz + PAGE_MASK) & ~PAGE_MASK;
 		paddr_t paddr = vaddr_to_paddr(trusty_app_image + prg_hdr->p_offset);
 		vaddr_t vaddr = prg_hdr->p_vaddr;
-		u_int flags = PF_TO_UTM_FLAGS(prg_hdr->p_flags) | UTM_FIXED;
+		uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_USER;
+		if (!(prg_hdr->p_flags & PF_W)) {
+			arch_mmu_flags += ARCH_MMU_FLAG_PERM_RO;
+		}
+		if (!(prg_hdr->p_flags & PF_X)) {
+			arch_mmu_flags += ARCH_MMU_FLAG_PERM_NO_EXECUTE;
+		}
 
-		ret = uthread_map_contig(trusty_app->ut, &vaddr, paddr, size,
-				flags, UT_MAP_ALIGN_4KB);
+		ret = vmm_alloc_physical(trusty_app->ut->aspace, "elfseg", size,
+		                         (void **)&vaddr, PAGE_SIZE_SHIFT,
+		                         paddr, VMM_FLAG_VALLOC_SPECIFIC,
+		                         arch_mmu_flags);
 		if (ret) {
 			dprintf(CRITICAL, "cannot map the segment\n");
 			return ret;
@@ -325,11 +327,12 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 #if DEBUG_LOAD_TRUSTY_APP
 		dprintf(SPEW,
 			"trusty_app %d: load vaddr 0x%08lx, paddr 0x%08lx,"
-			" rsize 0x%08x, msize 0x%08x, access %c%c%c,"
+			" rsize 0x%08x, msize 0x%08x, access r%c%c,"
 			" flags 0x%x\n",
 			trusty_app_idx, vaddr, paddr, size, prg_hdr->p_memsz,
-			flags & UTM_R ? 'r' : '-', flags & UTM_W ? 'w' : '-',
-			flags & UTM_X ? 'x' : '-', flags);
+			arch_mmu_flags & ARCH_MMU_FLAG_PERM_RO ? '-' : 'w',
+			arch_mmu_flags & ARCH_MMU_FLAG_PERM_NO_EXECUTE ? '-' : 'x',
+			arch_mmu_flags);
 #endif
 
 		/* start of code/data */
@@ -523,6 +526,7 @@ static void trusty_app_bootloader(void)
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 		vaddr_t *vaddr, uint32_t map_size)
 {
+	status_t ret;
 	u_int i;
 	u_int id, offset, size;
 
@@ -540,10 +544,15 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 			map_size = ROUNDUP(map_size, PAGE_SIZE);
 			if (map_size > size)
 				return ERR_INVALID_ARGS;
-
-			return uthread_map_contig(trusty_app->ut, vaddr, offset,
-						map_size, UTM_W | UTM_R | UTM_IO,
-						UT_MAP_ALIGN_4KB);
+			ret = vmm_alloc_physical(trusty_app->ut->aspace, "mmio",
+			                         map_size, (void **)vaddr,
+			                         PAGE_SIZE_SHIFT, offset,
+			                         0,
+			                         ARCH_MMU_FLAG_UNCACHED_DEVICE |
+			                         ARCH_MMU_FLAG_PERM_USER);
+			dprintf(SPEW, "mmio: vaddr 0x%lx, paddr 0x%x, ret %d\n",
+			        *vaddr, offset, ret);
+			return ret;
 		} else {
 			/* all other config options take 1 data value */
 			i++;

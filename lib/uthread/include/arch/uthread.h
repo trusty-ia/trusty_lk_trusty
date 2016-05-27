@@ -24,38 +24,15 @@
 #ifndef __ARCH_UTHREAD_H
 #define __ARCH_UTHREAD_H
 
-#include <arch/arch_uthread.h>
 #include <err.h>
-#include <stdbool.h>
 #include <sys/types.h>
-
-struct uthread;
-struct uthread_map;
 
 /* Holds a vaddr large enough for 32 or 64 bit clients */
 typedef uint64_t ext_vaddr_t;
 typedef uint32_t user_addr_t;
 
-void arch_uthread_init(void);
-
-status_t arch_uthread_create(struct uthread *ut);
-void arch_uthread_free(struct uthread *ut);
-
-void arch_uthread_startup(void);
-void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut);
-
-status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp);
-status_t arch_uthread_unmap(struct uthread *ut, struct uthread_map *mp);
-
 status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len);
 status_t arch_copy_to_user(user_addr_t udest, const void *ksrc, size_t len);
 ssize_t arch_strlcpy_from_user(char *kdst, user_addr_t usrc, size_t len);
-
-#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
-status_t arch_uthread_translate_map(struct uthread *ut_target, ext_vaddr_t vaddr_src,
-		vaddr_t vaddr_target, paddr_t *pfn_list,
-		uint32_t npages, u_int flags, bool ns_src,
-		uint64_t *ns_pte_list);
-#endif
 
 #endif /* __ARCH_UTHREAD_H */

@@ -28,6 +28,5 @@ GLOBAL_INCLUDES += \
 
 MODULE_SRCS += \
 	$(CUR_DIR)/usercopy.S \
-	$(CUR_DIR)/uthread.c \
 
 CUR_DIR :=

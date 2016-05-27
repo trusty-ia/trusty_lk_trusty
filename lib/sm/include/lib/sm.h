@@ -78,6 +78,8 @@ void sm_put_boot_args(void);
 /* Register handler(s) for an entity */
 status_t sm_register_entity(uint entity_nr, smc32_entity_t *entity);
 
+status_t sm_decode_ns_memory_attr(struct ns_page_info *pinf,
+                                  ns_addr_t *ppa, uint *pmmu);
 /* Helper function to get NS memory buffer info out of smc32 call params */
 status_t smc32_decode_mem_buf_info(struct smc32_args *args, ns_addr_t *ppa,
                                    ns_size_t *psz, uint *pmmu);
