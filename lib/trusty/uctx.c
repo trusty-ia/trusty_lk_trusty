@@ -210,9 +210,8 @@ void *uctx_get_priv(uctx_t *ctx)
 }
 
 /*
- * The caller transfers an ownership (and thus its ref) of the handle
- * to this function, which is handed off to the handle table of the user
- * process.
+ * Install specified handle into user handle table and increment installed
+ * handle ref count accordinly.
  */
 int uctx_handle_install(uctx_t *ctx, handle_t *handle, handle_id_t *id)
 {
@@ -229,6 +228,7 @@ int uctx_handle_install(uctx_t *ctx, handle_t *handle, handle_id_t *id)
 	ASSERT(ctx->handles[new_id] == NULL);
 
 	bitmap_set(ctx->inuse, new_id);
+	handle_incref(handle);
 	ctx->handles[new_id] = handle;
 	handle_list_add(&ctx->handle_list, handle);
 	*id = (handle_id_t) new_id;
@@ -257,8 +257,9 @@ int uctx_handle_get(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr)
 }
 
 /*
- *  Detach handle specified by handle ID from given user context and
- *  return it to caller.
+ *  Remove handle specified by handle ID from given user context and
+ *  return it to caller if requested. In later case the caller becomes an owner
+ *  of that handle.
  */
 int uctx_handle_remove(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr)
 {
@@ -271,7 +272,11 @@ int uctx_handle_remove(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr
 		bitmap_clear(ctx->inuse, handle_id);
 		ctx->handles[handle_id] = NULL;
 		handle_list_del(&ctx->handle_list, handle);
-		*handle_ptr = handle;
+		if (handle_ptr) {
+			handle_incref(handle);
+			*handle_ptr = handle;
+		}
+		handle_decref(handle);
 	}
 
 	return ret;

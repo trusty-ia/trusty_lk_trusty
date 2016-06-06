@@ -328,10 +328,11 @@ long __SYSCALL sys_port_create(user_addr_t path, uint32_t num_recv_bufs,
 	if (ret != NO_ERROR)
 		goto err_publish;
 
+	handle_decref(port_handle);
 	return (long) handle_id;
 
 err_publish:
-	(void) uctx_handle_remove(ctx, handle_id, &port_handle);
+	(void) uctx_handle_remove(ctx, handle_id, NULL);
 err_install:
 	handle_decref(port_handle);
 err_port_create:
@@ -805,6 +806,7 @@ long __SYSCALL sys_connect(user_addr_t path, uint32_t flags)
 		return (long) ret;
 	}
 
+	handle_decref(chandle);
 	return (long) handle_id;
 }
 
@@ -922,11 +924,12 @@ long __SYSCALL sys_accept(uint32_t handle_id, user_addr_t user_uuid)
 	if (ret != NO_ERROR)
 		goto err_uuid_copy;
 
+	handle_decref(chandle);
 	handle_decref(phandle);
 	return (long) new_id;
 
 err_uuid_copy:
-	uctx_handle_remove(ctx, new_id, &chandle);
+	uctx_handle_remove(ctx, new_id, NULL);
 err_install:
 	handle_close(chandle);
 err_accept:
