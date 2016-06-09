@@ -33,7 +33,7 @@ typedef struct uctx uctx_t;
 
 typedef uint32_t handle_id_t;
 
-#define INVALID_HANDLE_ID  (0xFFFFFFFFu)
+#define INVALID_HANDLE_ID  ((handle_id_t)0xFFFFFFFF)
 
 int uctx_create(void *priv, uctx_t **ctx);
 void uctx_destroy(uctx_t *ctx);

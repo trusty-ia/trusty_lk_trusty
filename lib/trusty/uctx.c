@@ -50,12 +50,15 @@
 /* must be a multiple of sizeof(unsigned long) */
 #define IPC_MAX_HANDLES		64
 
+#define IPC_HANDLE_ID_BASE	1000
+
 struct uctx {
 	unsigned long		inuse[BITMAP_NUM_WORDS(IPC_MAX_HANDLES)];
 	handle_t		*handles[IPC_MAX_HANDLES];
 
 	void			*priv;
 	handle_list_t		handle_list;
+	handle_id_t		handle_id_base;
 };
 
 static status_t _uctx_startup(trusty_app_t *app);
@@ -118,25 +121,31 @@ uctx_t *current_uctx(void)
 /*
  *  Check if specified handle_id does represent a valid handle
  *  for specified user context.
+ *
+ *  On success return index of the handle in handle table,
+ *  negative error otherwise
  */
 static int _check_handle_id(uctx_t *ctx, handle_id_t handle_id)
 {
+	uint32_t idx;
+
 	DEBUG_ASSERT(ctx);
 
-	if (unlikely(handle_id >= IPC_MAX_HANDLES)) {
+	idx = handle_id - ctx->handle_id_base;
+	if (unlikely(idx >= IPC_MAX_HANDLES)) {
 		LTRACEF("%d is invalid handle id\n", handle_id);
 		return ERR_BAD_HANDLE;
 	}
 
-	if (!bitmap_test(ctx->inuse, handle_id)) {
+	if (!bitmap_test(ctx->inuse, idx)) {
 		LTRACEF("%d is unused handle id\n", handle_id);
 		return ERR_NOT_FOUND;
 	}
 
 	/* there should be a handle there */
-	ASSERT(ctx->handles[handle_id]);
+	ASSERT(ctx->handles[idx]);
 
-	return NO_ERROR;
+	return idx;
 }
 
 /*
@@ -148,7 +157,7 @@ static handle_id_t _handle_to_id_locked(uctx_t *ctx, handle_t *handle)
 
 	for (int i = 0; i < IPC_MAX_HANDLES; i++) {
 		if (ctx->handles[i] == handle) {
-			return i;
+			return ctx->handle_id_base + i;
 		}
 	}
 	return INVALID_HANDLE_ID;
@@ -173,6 +182,7 @@ int uctx_create(void *priv, uctx_t **ctx)
 	}
 
 	new_ctx->priv = priv;
+	new_ctx->handle_id_base = IPC_HANDLE_ID_BASE;
 
 	handle_list_init(&new_ctx->handle_list);
 
@@ -215,23 +225,23 @@ void *uctx_get_priv(uctx_t *ctx)
  */
 int uctx_handle_install(uctx_t *ctx, handle_t *handle, handle_id_t *id)
 {
-	int new_id;
+	int new_idx;
 
 	DEBUG_ASSERT(ctx);
 	DEBUG_ASSERT(handle);
 	DEBUG_ASSERT(id);
 
-	new_id = bitmap_ffz(ctx->inuse, IPC_MAX_HANDLES);
-	if (new_id < 0)
+	new_idx = bitmap_ffz(ctx->inuse, IPC_MAX_HANDLES);
+	if (new_idx < 0)
 		return ERR_NO_RESOURCES;
 
-	ASSERT(ctx->handles[new_id] == NULL);
+	ASSERT(ctx->handles[new_idx] == NULL);
 
-	bitmap_set(ctx->inuse, new_id);
+	bitmap_set(ctx->inuse, new_idx);
 	handle_incref(handle);
-	ctx->handles[new_id] = handle;
+	ctx->handles[new_idx] = handle;
 	handle_list_add(&ctx->handle_list, handle);
-	*id = (handle_id_t) new_id;
+	*id = ctx->handle_id_base + new_idx;
 
 	return NO_ERROR;
 }
@@ -246,11 +256,12 @@ int uctx_handle_get(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr)
 	DEBUG_ASSERT(handle_ptr);
 
 	int ret = _check_handle_id (ctx, handle_id);
-	if (ret == NO_ERROR) {
-		handle_t *handle = ctx->handles[handle_id];
+	if (ret >= 0) {
+		handle_t *handle = ctx->handles[ret];
 		/* take a reference on the handle we looked up */
 		handle_incref(handle);
 		*handle_ptr = handle;
+		ret = NO_ERROR;
 	}
 
 	return ret;
@@ -263,23 +274,26 @@ int uctx_handle_get(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr)
  */
 int uctx_handle_remove(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr)
 {
+	int ret;
+
 	DEBUG_ASSERT(ctx);
 	DEBUG_ASSERT(handle_ptr);
 
-	int ret = _check_handle_id(ctx, handle_id);
-	if (ret == NO_ERROR) {
-		handle_t *handle = ctx->handles[handle_id];
-		bitmap_clear(ctx->inuse, handle_id);
-		ctx->handles[handle_id] = NULL;
-		handle_list_del(&ctx->handle_list, handle);
-		if (handle_ptr) {
-			handle_incref(handle);
-			*handle_ptr = handle;
-		}
-		handle_decref(handle);
-	}
+	ret = _check_handle_id(ctx, handle_id);
+	if (ret < 0)
+		return ret;
 
-	return ret;
+	handle_t *handle = ctx->handles[ret];
+	bitmap_clear(ctx->inuse, ret);
+	ctx->handles[ret] = NULL;
+	handle_list_del(&ctx->handle_list, handle);
+	if (handle_ptr) {
+		handle_incref(handle);
+		*handle_ptr = handle;
+	}
+	handle_decref(handle);
+
+	return NO_ERROR;
 }
 
 
