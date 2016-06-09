@@ -30,11 +30,14 @@
 #include <mm.h>
 #include <stdlib.h>
 #include <string.h>
+#include <trace.h>
 
 #include <platform.h>
 #include <uthread.h>
 #include <lib/trusty/sys_fd.h>
 #include <lib/trusty/trusty_app.h>
+
+#define LOCAL_TRACE 0
 
 static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size);
 
@@ -203,6 +206,9 @@ long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
 	uint32_t entries = 0;
 	long ret;
 
+	LTRACEF("uaddr 0x%x, size 0x%x, flags 0x%x, pmem 0x%x\n",
+	        uaddr, size, flags, pmem);
+
 	if (size == 0 || !valid_address((vaddr_t)uaddr, size))
 		return ERR_INVALID_ARGS;
 
@@ -239,6 +245,8 @@ long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
 
 long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
 {
+	LTRACEF("uaddr 0x%x, size 0x%x, flags 0x%x\n", uaddr, size, flags);
+
 	/* check buffer is in task's address space */
 	if (!valid_address((vaddr_t)uaddr, size))
 		return ERR_INVALID_ARGS;
