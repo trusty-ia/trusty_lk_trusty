@@ -124,6 +124,12 @@ ssize_t membuf_to_user_iovec(user_addr_t iov_uaddr, uint iov_cnt,
 		if (to_copy > uiov.len)
 			to_copy = uiov.len;
 
+		if (unlikely(to_copy == 0))
+			continue;
+
+		if (unlikely(uiov.base == NULL))
+			return (ssize_t) ERR_INVALID_ARGS;
+
 		/* copy data to user space */
 		ret = copy_to_user(uiov.base, buf, to_copy);
 		if (unlikely(ret != NO_ERROR))
@@ -165,6 +171,12 @@ ssize_t user_iovec_to_membuf(uint8_t *buf, size_t len,
 		size_t to_copy = len;
 		if (to_copy > uiov.len)
 			to_copy = uiov.len;
+
+		if (unlikely(to_copy == 0))
+			continue;
+
+		if (unlikely(uiov.base == NULL))
+			return (ssize_t) ERR_INVALID_ARGS;
 
 		/* copy data to user space */
 		ret = copy_from_user(buf, uiov.base, to_copy);
