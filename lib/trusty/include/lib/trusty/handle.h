@@ -63,8 +63,7 @@ typedef struct handle {
 } handle_t;
 
 struct handle_ops {
-	uint32_t (*poll)(handle_t *handle);
-	void (*finalize_event)(handle_t *handle, uint32_t event);
+	uint32_t (*poll)(handle_t *handle, uint32_t emask, bool finalize);
 	void (*shutdown)(handle_t *handle);
 	void (*destroy)(handle_t *handle);
 };

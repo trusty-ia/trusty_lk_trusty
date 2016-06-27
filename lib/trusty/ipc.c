@@ -55,12 +55,11 @@ static struct list_node ipc_port_list = LIST_INITIAL_VALUE(ipc_port_list);
 
 mutex_t ipc_lock = MUTEX_INITIAL_VALUE(ipc_lock);
 
-static uint32_t port_poll(handle_t *handle);
+static uint32_t port_poll(handle_t *handle, uint32_t emask, bool finalize);
 static void port_shutdown(handle_t *handle);
 static void port_handle_destroy(handle_t *handle);
 
-static uint32_t chan_poll(handle_t *handle);
-static void chan_finalize_event(handle_t *handle, uint32_t event);
+static uint32_t chan_poll(handle_t *handle, uint32_t emask, bool finalize);
 static void chan_shutdown(handle_t *handle);
 static void chan_handle_destroy(handle_t *handle);
 
@@ -78,7 +77,6 @@ static struct handle_ops ipc_port_handle_ops = {
 
 static struct handle_ops ipc_chan_handle_ops = {
 	.poll		= chan_poll,
-	.finalize_event = chan_finalize_event,
 	.shutdown	= chan_shutdown,
 	.destroy	= chan_handle_destroy,
 };
@@ -354,7 +352,7 @@ static ipc_port_t *port_find_locked(const char *path)
 	return NULL;
 }
 
-static uint32_t port_poll(handle_t *phandle)
+static uint32_t port_poll(handle_t *phandle, uint32_t emask, bool finalize)
 {
 	DEBUG_ASSERT(phandle);
 	DEBUG_ASSERT(ipc_is_port(phandle));
@@ -370,7 +368,7 @@ static uint32_t port_poll(handle_t *phandle)
 	LTRACEF("%s in state %d events %x\n", port->path, port->state, events);
 	mutex_release(&ipc_lock);
 
-	return events;
+	return events & emask;
 }
 
 /*
@@ -509,7 +507,7 @@ static void chan_handle_destroy(handle_t *chandle)
 /*
  *  Poll channel state
  */
-static uint32_t chan_poll(handle_t *chandle)
+static uint32_t chan_poll(handle_t *chandle, uint32_t emask, bool finalize)
 {
 	DEBUG_ASSERT(chandle);
 	DEBUG_ASSERT(ipc_is_channel(chandle));
@@ -547,27 +545,20 @@ static uint32_t chan_poll(handle_t *chandle)
 		events |= IPC_HANDLE_POLL_SEND_UNBLOCKED;
 	}
 
+	events &= emask;
+	if (finalize) {
+		if (events & IPC_HANDLE_POLL_READY) {
+			chan->aux_state &= ~IPC_CHAN_AUX_STATE_CONNECTED;
+		}
+		if (events & IPC_HANDLE_POLL_SEND_UNBLOCKED) {
+			chan->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
+		}
+	}
+
 done:
 	mutex_release(&ipc_lock);
 	return events;
 }
-
-static void chan_finalize_event(handle_t *chandle, uint32_t event)
-{
-	DEBUG_ASSERT(chandle);
-	DEBUG_ASSERT(ipc_is_channel(chandle));
-
-	if (event & (IPC_HANDLE_POLL_SEND_UNBLOCKED | IPC_HANDLE_POLL_READY)) {
-		mutex_acquire(&ipc_lock);
-		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
-		if (event & IPC_HANDLE_POLL_SEND_UNBLOCKED)
-			chan->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
-		if (event & IPC_HANDLE_POLL_READY)
-			chan->aux_state &= ~IPC_CHAN_AUX_STATE_CONNECTED;
-		mutex_release(&ipc_lock);
-	}
-}
-
 
 /*
  *  Check if connection to specified port is allowed

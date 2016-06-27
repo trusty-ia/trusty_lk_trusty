@@ -137,7 +137,7 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 	}
 
 	while (true) {
-		event = handle->ops->poll(handle);
+		event = handle->ops->poll(handle, ~0, true);
 		if (event)
 			break;
 		ret = __do_wait(&ev, timeout);
@@ -145,8 +145,6 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 			goto finish_wait;
 	}
 
-	if (handle->ops->finalize_event)
-		handle->ops->finalize_event(handle, event);
 	*handle_event = event;
 	ret = NO_ERROR;
 
@@ -198,7 +196,7 @@ void handle_list_add(handle_list_t *hlist, handle_t *handle)
 		_prepare_wait_handle(hlist->wait_event, handle);
 
 		/* call poll to check if it is already signaled */
-		uint32_t event = handle->ops->poll(handle);
+		uint32_t event = handle->ops->poll(handle, ~0, false);
 		if (event) {
 			handle_notify(handle);
 		}
@@ -292,7 +290,7 @@ static int _hlist_do_poll_locked(handle_list_t *hlist, handle_t **handle_ptr,
 			last_prep = next;
 		}
 
-		uint32_t event = next->ops->poll(next);
+		uint32_t event = next->ops->poll(next, ~0, true);
 		if (event) {
 			*event_ptr = event;
 			*handle_ptr = next;
@@ -355,9 +353,6 @@ int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 
 	if (ret == 1) {
 		handle_t *handle = *handle_ptr;
-
-		if (handle->ops->finalize_event)
-			handle->ops->finalize_event(handle, *event_ptr);
 
 		handle_incref(handle);
 
