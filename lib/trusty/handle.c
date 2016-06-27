@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Google, Inc. All rights reserved
+ * Copyright (c) 2013-2018, Google, Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -38,7 +38,7 @@
 #if WITH_TRUSTY_IPC
 
 #include <lib/syscall.h>
-#include <lib/trusty/ipc.h>
+#include <lib/trusty/handle.h>
 
 void handle_init(handle_t *handle, struct handle_ops *ops)
 {
@@ -52,6 +52,7 @@ void handle_init(handle_t *handle, struct handle_ops *ops)
 	spin_lock_init(&handle->slock);
 	handle->cookie = NULL;
 	list_clear_node(&handle->hlist_node);
+	list_initialize(&handle->waiter_list);
 }
 
 static void __handle_destroy_ref(refcount_t *ref)
@@ -119,28 +120,43 @@ static void _finish_wait_handle(handle_t *handle)
 	spin_unlock_restore(&handle->slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
 }
 
+void handle_add_waiter(struct handle *h, struct handle_waiter *w)
+{
+	spin_lock_saved_state_t state;
+
+	spin_lock_save(&h->slock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
+	list_add_tail(&h->waiter_list, &w->node);
+	spin_unlock_restore(&h->slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
+}
+
+void handle_del_waiter(struct handle *h, struct handle_waiter *w)
+{
+	spin_lock_saved_state_t state;
+
+	spin_lock_save(&h->slock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
+	list_delete(&w->node);
+	spin_unlock_restore(&h->slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
+}
+
 int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 {
 	uint32_t event;
-	event_t ev;
 	int ret = 0;
+	struct handle_event_waiter ew = HANDLE_EVENT_WAITER_INITIAL_VALUE(ew);
 
 	if (!handle || !handle_event)
 		return ERR_INVALID_ARGS;
 
-	event_init(&ev, false, EVENT_FLAG_AUTOUNSIGNAL);
+	if (!handle->ops->poll)
+		return ERR_NOT_SUPPORTED;
 
-	ret = _prepare_wait_handle(&ev, handle);
-	if (ret) {
-		LTRACEF("someone is already waiting on handle %p\n", handle);
-		goto err_prepare_wait;
-	}
+	handle_add_waiter(handle, &ew.waiter);
 
 	while (true) {
 		event = handle->ops->poll(handle, ~0, true);
 		if (event)
 			break;
-		ret = __do_wait(&ev, timeout);
+		ret = __do_wait(&ew.event, timeout);
 		if (ret < 0)
 			goto finish_wait;
 	}
@@ -149,15 +165,19 @@ int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout)
 	ret = NO_ERROR;
 
 finish_wait:
-	_finish_wait_handle(handle);
-err_prepare_wait:
-	event_destroy(&ev);
+	handle_del_waiter(handle, &ew.waiter);
+	event_destroy(&ew.event);
 	return ret;
 }
 
-static void handle_notify_waiters_locked(handle_t *handle)
+void handle_notify_waiters_locked(handle_t *handle)
 {
+	struct handle_waiter *w;
 
+	list_for_every_entry(&handle->waiter_list, w,
+	                     struct handle_waiter, node) {
+		w->notify_proc(w);
+	}
 	if (handle->wait_event) {
 		LTRACEF("notifying handle %p wait_event %p\n",
 			handle, handle->wait_event);

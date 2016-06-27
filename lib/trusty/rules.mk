@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2013-2015, Google, Inc. All rights reserved
+# Copyright (c) 2013-2018, Google, Inc. All rights reserved
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files
@@ -32,6 +32,7 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/trusty_app.c \
 	$(LOCAL_DIR)/syscall.c \
 	$(LOCAL_DIR)/handle.c \
+	$(LOCAL_DIR)/handle_set.c \
 	$(LOCAL_DIR)/uctx.c \
 	$(LOCAL_DIR)/ipc.c \
 	$(LOCAL_DIR)/ipc_msg.c \
@@ -40,6 +41,11 @@ MODULE_SRCS := \
 
 ifeq (true,$(call TOBOOL,$(WITH_TRUSTY_IPC)))
 GLOBAL_DEFINES += WITH_TRUSTY_IPC=1
+
+# check if we want to disable wait_any support
+ifeq (false, $(call TOBOOL,$(WITH_NO_WAIT_ANY_SUPPORT)))
+GLOBAL_DEFINES += WITH_WAIT_ANY_SUPPORT=1
+endif
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/vqueue.c \

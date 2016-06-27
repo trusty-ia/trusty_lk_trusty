@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Google, Inc. All rights reserved
+ * Copyright (c) 2013-2018, Google, Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -58,9 +58,61 @@ typedef struct handle {
 	spin_lock_t		slock;
 
 	struct list_node	hlist_node;
+	struct list_node	waiter_list;
 
 	void			*cookie;
 } handle_t;
+
+struct handle_waiter {
+	struct list_node node;
+	void (*notify_proc)(struct handle_waiter *);
+};
+
+struct handle_event_waiter {
+	struct handle_waiter waiter;
+	struct event event;
+};
+
+static void handle_event_waiter_notify(struct handle_waiter *hw)
+{
+	struct handle_event_waiter *hew;
+	hew = containerof(hw, struct handle_event_waiter, waiter);
+	event_signal(&hew->event, false);
+}
+
+#define HANDLE_EVENT_WAITER_INITIAL_VALUE(ew)              \
+{                                                          \
+	.waiter = {                                        \
+		.node = LIST_INITIAL_CLEARED_VALUE,        \
+		.notify_proc = handle_event_waiter_notify, \
+	},                                                 \
+	.event = EVENT_INITIAL_VALUE((ew).event, false,    \
+	                              EVENT_FLAG_AUTOUNSIGNAL), \
+}
+
+/**
+ * struct handle_ref - struct representing handle reference
+ * @set_node:   list node used with set_list of handle_set struct
+ * @ready_node: list node used with ready_list of handle_set struct
+ * @uctx_node:  list node used with ref_lists of uctx struct
+ * @waiter:     used with waiter_list of handle struct
+ * @parent:     pointer to parent handle set if any
+ * @handle:     pointer to underlying handle struct
+ * @id:         corresponds to handle field in uevent struct
+ * @emask:      event mask
+ * @cookie:     corresponds to cookie field in uevent struct
+ */
+struct handle_ref {
+	struct list_node set_node;
+	struct list_node ready_node;
+	struct list_node uctx_node;
+	struct handle_waiter waiter;
+	struct handle *parent;
+	struct handle *handle;
+	uint32_t id;
+	uint32_t emask;
+	void    *cookie;
+};
 
 struct handle_ops {
 	uint32_t (*poll)(handle_t *handle, uint32_t emask, bool finalize);
@@ -87,8 +139,14 @@ void handle_close(handle_t *handle);
 void handle_incref(handle_t *handle);
 void handle_decref(handle_t *handle);
 
+void handle_add_waiter(struct handle *h, struct handle_waiter *w);
+void handle_del_waiter(struct handle *h, struct handle_waiter *w);
+
 int handle_wait(handle_t *handle, uint32_t *handle_event, lk_time_t timeout);
+int handle_ref_wait(const struct handle_ref *in, struct handle_ref *out,
+                    lk_time_t timeout);
 void handle_notify(handle_t *handle);
+void handle_notify_waiters_locked(handle_t *handle);
 
 static inline void handle_set_cookie(handle_t *handle, void *cookie)
 {

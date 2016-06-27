@@ -44,6 +44,8 @@ DEF_SYSCALL(0x11, connect, long, 2, const char *path, uint32_t flags)
 DEF_SYSCALL(0x12, accept, long, 2, uint32_t handle_id, uuid_t *peer_uuid)
 DEF_SYSCALL(0x13, close, long, 1, uint32_t handle_id)
 DEF_SYSCALL(0x14, set_cookie, long, 2, uint32_t handle, void *cookie)
+DEF_SYSCALL(0x15, handle_set_create, long, 0)
+DEF_SYSCALL(0x16, handle_set_ctrl, long, 3, uint32_t handle, uint32_t cmd, struct uevent *evt)
 
 /* handle polling related syscalls */
 DEF_SYSCALL(0x18, wait, long, 3, uint32_t handle_id, uevent_t *event, uint32_t timeout_msecs)
