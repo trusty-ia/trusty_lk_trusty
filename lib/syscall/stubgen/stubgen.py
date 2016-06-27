@@ -79,6 +79,23 @@ copyright_header = """/*
  */
 """
 
+intel_copyright_header = """/*
+ * Copyright (c) 2015 Intel Corporation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+"""
+
 autogen_header = """
 /* This file is auto-generated. !!! DO NOT EDIT !!! */
 
@@ -98,12 +115,55 @@ FUNCTION(%(sys_fn)s)
     bx      lr
 """
 
+asm_x86_macro ="""
+.macro  PROLOG
+    push %ebp
+    mov %esp, %ebp
+    pushf
+    push %ebp
+    push %esi
+    push %edi
+    push %ebx
+.endm
+
+.macro  MOV_PARAMS
+   mov 0x08(%ebp),%edi
+   mov 0x0c(%ebp),%esi
+   mov 0x10(%ebp),%edx
+   mov 0x14(%ebp),%ecx
+   /* Return Addr and stack*/
+   mov $1f, %ebx
+   mov %esp, %ebp
+.endm
+
+.macro EPILOG
+1:  pop %ebx
+    pop %edi
+    pop %esi
+    pop %ebp
+    popf
+    pop %ebp
+.endm
+"""
+
+syscall_x86_stub = """
+FUNCTION(%(sys_fn)s)
+    PROLOG
+    mov $__NR_%(sys_fn)s, %%eax
+    MOV_PARAMS
+    sysenter
+    EPILOG
+    ret
+"""
+
 syscall_define = "#define __NR_%(sys_fn)s\t\t%(sys_nr)s\n"
 
 syscall_proto = "%(sys_rt)s %(sys_fn)s (%(sys_args)s);\n"
 
 asm_ifdef = "\n#ifndef ASSEMBLY\n"
-asm_endif = "\n#endif"
+asm_endif = "\n#endif\n"
+begin_cdecls = "\n__BEGIN_CDECLS\n"
+end_cdecls = "\n__END_CDECLS\n"
 
 syscall_def = "DEF_SYSCALL"
 
@@ -171,7 +231,7 @@ def parse_check_def(line):
         return None
 
 
-def process_table(table_file, std_file, stubs_file, verify):
+def process_table(table_file, std_file, stubs_file, verify, arch):
     """
     Process a syscall table and generate:
     1. A sycall stubs file
@@ -199,7 +259,10 @@ def process_table(table_file, std_file, stubs_file, verify):
         if not verify:
             define_lines += syscall_define % params
             proto_lines += syscall_proto % params
-            stub_lines += syscall_stub % params
+            if arch == 'x86':
+                stub_lines += syscall_x86_stub % params
+            else:
+                stub_lines += syscall_stub % params
 
 
     tbl.close()
@@ -211,14 +274,20 @@ def process_table(table_file, std_file, stubs_file, verify):
         with open(std_file, "w") as std:
             std.writelines(copyright_header + autogen_header)
             std.writelines(define_lines + asm_ifdef)
-            std.writelines(proto_lines + asm_endif)
+            std.writelines(begin_cdecls + proto_lines)
+            std.writelines(end_cdecls + asm_endif)
 
     if stubs_file is not None:
         with open(stubs_file, "w") as stubs:
-            stubs.writelines(copyright_header + autogen_header)
+            if arch == 'x86':
+                stubs.writelines(intel_copyright_header + autogen_header)
+            else:
+                std.writelines(copyright_header + autogen_header)
             stubs.writelines(includes_header % asm_header)
             if std_file is not None:
                 stubs.writelines(includes_header % std_file)
+            if arch == 'x86':
+                stubs.writelines(asm_x86_macro)
             stubs.writelines(stub_lines)
 
 
@@ -236,6 +305,9 @@ def main():
     op.add_option("-s", "--stubs-file", type="string",
             dest="stub_file", default=None,
             help="path to syscall assembly stubs file.")
+    op.add_option("-a", "--arch", type="string",
+            dest="arch", default="x86",
+            help="arch of stub assembly files")
 
     (opts, args) = op.parse_args()
 
@@ -248,7 +320,7 @@ def main():
             op.print_help()
             sys.exit(1)
 
-    process_table(args[0], opts.std_file, opts.stub_file, opts.verify)
+    process_table(args[0], opts.std_file, opts.stub_file, opts.verify, opts.arch)
 
 
 if __name__ == '__main__':
