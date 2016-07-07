@@ -266,6 +266,12 @@ bool arch_uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size)
 
 status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len)
 {
+    if (len == 0)
+        return NO_ERROR;
+
+    if (kdest == NULL || usrc == NULL)
+        return ERR_FAULT;
+
     /* TODO: be smarter about handling invalid addresses... */
     if (!arch_uthread_is_valid_range(uthread_get_current(), (vaddr_t)usrc, len))
         return ERR_FAULT;
@@ -276,6 +282,12 @@ status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len)
 
 status_t arch_copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
 {
+    if (len == 0)
+        return NO_ERROR;
+
+    if (ksrc == NULL || udest == NULL)
+        return ERR_FAULT;
+
     /* TODO: be smarter about handling invalid addresses... */
     if (!arch_uthread_is_valid_range(uthread_get_current(), (vaddr_t)udest, len))
         return ERR_FAULT;
