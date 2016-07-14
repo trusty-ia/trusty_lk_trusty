@@ -44,4 +44,4 @@
 #define BUILDID_STR ""
 #endif
 
-char lk_version[] = VERSION_STR BUILDID_STR "Built: " __TIME__ " " __DATE__;
+char lk_version[] = VERSION_STR BUILDID_STR "" __TIME__ " " __DATE__;
