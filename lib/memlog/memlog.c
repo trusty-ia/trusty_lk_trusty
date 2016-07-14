@@ -35,7 +35,7 @@
 #include <err.h>
 #include <pow2.h>
 #include <list.h>
-
+#include <platform/lkguest.h>
 #include "trusty-log.h"
 
 #define LOG_LOCK_FLAGS SPIN_LOCK_FLAG_IRQ_FIQ
@@ -195,6 +195,9 @@ long memlog_add(paddr_t pa, size_t sz)
 
 	log->cb.print = memlog_print_callback;
 	register_print_callback(&log->cb);
+	/* flush the LK's init log to the registered print_cb and disable tee buffer then. */
+	disable_tee_buffer(&log->cb);
+
 	return 0;
 
 error_failed_to_map:

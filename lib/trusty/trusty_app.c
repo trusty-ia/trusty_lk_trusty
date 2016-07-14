@@ -375,6 +375,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 		return ret;
 	}
 
+#if DEBUG_LOAD_TRUSTY_APP
 	dprintf(SPEW, "trusty_app %d: code: start 0x%08lx end 0x%08lx\n",
 		trusty_app_idx, start_code, end_code);
 	dprintf(SPEW, "trusty_app %d: data: start 0x%08lx end 0x%08lx\n",
@@ -385,7 +386,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 		trusty_app_idx, trusty_app->start_brk, trusty_app->end_brk);
 
 	dprintf(SPEW, "trusty_app %d: entry 0x%08lx\n", trusty_app_idx, trusty_app->ut->entry);
-
+#endif
 	return NO_ERROR;
 }
 
