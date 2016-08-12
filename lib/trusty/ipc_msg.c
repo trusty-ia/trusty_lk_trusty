@@ -68,7 +68,7 @@ typedef struct msg_item {
 	uint8_t			id;
 	uint8_t			state;
 	uint			num_handles;
-	handle_id_t		handles[MAX_MSG_HANDLES];
+	struct handle		*handles[MAX_MSG_HANDLES];
 	size_t			len;
 	struct list_node	node;
 } msg_item_t;
@@ -90,19 +90,6 @@ struct ipc_msg_queue {
 	 */
 	msg_item_t		items[0];
 };
-
-enum {
-	IPC_MSG_BUFFER_USER	= 0,
-	IPC_MSG_BUFFER_KERNEL	= 1,
-};
-
-typedef struct msg_desc {
-	int type;
-	union {
-		ipc_msg_kern_t	kern;
-		ipc_msg_user_t	user;
-	};
-} msg_desc_t;
 
 /**
  * @brief  Create IPC message queue
@@ -157,6 +144,15 @@ err_alloc_buf:
 
 void ipc_msg_queue_destroy(ipc_msg_queue_t *mq)
 {
+	/* release handles if any */
+	for (uint i = 0; i < mq->num_items; i++) {
+		struct msg_item *item = &mq->items[i];
+		if (item->num_handles) {
+			for (uint j = 0; j < item->num_handles; j++) {
+				handle_decref(item->handles[j]);
+			}
+		}
+	}
 	free(mq->buf);
 	free(mq);
 }
@@ -197,7 +193,111 @@ static int check_channel(handle_t *chandle)
 	return NO_ERROR;
 }
 
-static int msg_write_locked(ipc_chan_t *chan, msg_desc_t *msg)
+static ssize_t kern_msg_write_locked(struct ipc_msg_queue *mq,
+				     struct msg_item *item,
+				     const struct ipc_msg_kern *msg)
+{
+	ssize_t ret;
+	uint8_t *buf = msg_queue_get_buf(mq, item);
+
+	if (msg->num_handles) {
+		if (msg->num_handles > MAX_MSG_HANDLES) {
+			LTRACEF("sending too many (%u) handles\n",
+				msg->num_handles);
+			return ERR_TOO_BIG;
+		}
+
+		if (!msg->handles)
+			return ERR_INVALID_ARGS;
+	}
+
+	/* copy message body */
+	ret = kern_iovec_to_membuf(buf, mq->item_sz,
+				  (const iovec_kern_t *)msg->iov,
+				   msg->num_iov);
+	if (ret < 0)
+		return ret;
+
+	/* copy attached handles */
+	for (uint i = 0; i < msg->num_handles; i++) {
+
+		if (!msg->handles[i]) {
+			ret = ERR_BAD_HANDLE;
+			goto err_bad_handle;
+		}
+
+		/* grab an additional reference */
+		handle_incref(msg->handles[i]);
+		item->handles[i] = msg->handles[i];
+		item->num_handles++;
+	}
+
+	return ret;
+
+err_bad_handle:
+	for (uint i = 0; i < item->num_handles; i++) {
+		handle_decref(item->handles[i]);
+		item->handles[i] = NULL;
+	}
+	item->num_handles = 0;
+
+	return ret;
+}
+
+static ssize_t user_msg_write_locked(struct ipc_msg_queue *mq,
+				     struct msg_item *item,
+				     const struct ipc_msg_user *msg,
+				     struct uctx *uctx)
+{
+	int rc;
+	ssize_t ret;
+	uint8_t *buf = msg_queue_get_buf(mq, item);
+
+	if (msg->num_handles > MAX_MSG_HANDLES) {
+		LTRACEF("sending too many (%u) handles\n",
+			msg->num_handles);
+		return ERR_TOO_BIG;
+	}
+
+	/* copy message body */
+	ret = user_iovec_to_membuf(buf, mq->item_sz, msg->iov, msg->num_iov);
+	if (ret < 0)
+		return ret;
+
+	if (!msg->num_handles)
+		return ret; /* no handles, just return body */
+
+	/* copy handle ids from user space */
+	handle_id_t ids[msg->num_handles];
+
+	rc = copy_from_user(&ids, msg->handles,
+			    msg->num_handles * sizeof(handle_id_t));
+	if (unlikely(rc != NO_ERROR))
+		return rc;
+
+	/* Need to send all or none */
+	for (uint i = 0; i < msg->num_handles; i++) {
+		rc = uctx_handle_get(uctx, ids[i], &item->handles[i]);
+		if (unlikely(rc != NO_ERROR)) {
+			goto err_get;
+		}
+		item->num_handles++;
+	}
+
+	return ret;
+
+err_get:
+	for (uint i = 0; i < item->num_handles; i++) {
+		handle_decref(item->handles[i]);
+		item->handles[i] = NULL;
+	}
+	item->num_handles = 0;
+
+	return rc;
+}
+
+static int msg_write_locked(ipc_chan_t *chan, const void *msg,
+                            struct uctx *uctx)
 {
 	ssize_t ret;
 	msg_item_t *item;
@@ -220,30 +320,13 @@ static int msg_write_locked(ipc_chan_t *chan, msg_desc_t *msg)
 
 	DEBUG_ASSERT(item->state == MSG_ITEM_STATE_FREE);
 
-	/* TODO: figure out what to do about handles */
 	item->num_handles = 0;
 	item->len = 0;
 
-	uint8_t *buf = msg_queue_get_buf(mq, item);
-
-	if (msg->type == IPC_MSG_BUFFER_KERNEL) {
-		if (msg->kern.num_handles) {
-			LTRACEF("handles are not supported yet\n");
-			return ERR_NOT_SUPPORTED;
-		}
-		ret = kern_iovec_to_membuf(buf, mq->item_sz,
-		                          (const iovec_kern_t *)msg->kern.iov,
-		                           msg->kern.num_iov);
-	} else if (msg->type == IPC_MSG_BUFFER_USER) {
-		if (msg->user.num_handles) {
-			LTRACEF("handles are not supported yet\n");
-			return ERR_NOT_SUPPORTED;
-		}
-		ret = user_iovec_to_membuf(buf, mq->item_sz,
-		                           msg->user.iov, msg->user.num_iov);
-	} else {
-		return ERR_INVALID_ARGS;
-	}
+	if (uctx)
+		ret = user_msg_write_locked(mq, item, msg, uctx);
+	else
+		ret = kern_msg_write_locked(mq, item, msg);
 
 	if (ret < 0)
 		return ret;
@@ -257,60 +340,104 @@ static int msg_write_locked(ipc_chan_t *chan, msg_desc_t *msg)
 }
 
 /*
- * reads the specified message by copying the data into the iov list
- * provided by msg. The message must have been previously moved
- * to the read list (and thus put into READ state).
+ * Check if specified message id is valid, message is in read state
+ * and provided offset is within message bounds.
  */
-static int msg_read_locked(ipc_msg_queue_t *mq, uint32_t msg_id,
-                           uint32_t offset, msg_desc_t *msg)
+static msg_item_t *msg_check_read_item(ipc_msg_queue_t *mq,
+                                       uint32_t msg_id, uint32_t offset)
 {
 	msg_item_t *item;
 
 	item = msg_queue_get_item(mq, msg_id);
 	if (!item) {
 		LTRACEF("invalid message id %d\n", msg_id);
-		return ERR_INVALID_ARGS;
+		return NULL;
 	}
 
 	if (item->state != MSG_ITEM_STATE_READ) {
 		LTRACEF("message %d is not in READ state (0x%x)\n",
 		         item->id, item->state);
-		return ERR_INVALID_ARGS;
-	}
-
-	if (item->num_handles) {
-		LTRACEF("handles are not supported yet\n");
-		return ERR_NOT_SUPPORTED;
+		return NULL;
 	}
 
 	if (offset > item->len) {
 		LTRACEF("invalid offset %d\n", offset);
-		return ERR_INVALID_ARGS;
+		return NULL;
 	}
+
+	return item;
+}
+
+/*
+ * Reads the specified message by copying message data into the iov list
+ * and associated handles to destination handle array provided by kmsg.
+ * The message must have been previously moved to the read list (and thus
+ * put into READ state).
+ */
+static int kern_msg_read_locked(ipc_msg_queue_t *mq,
+				int32_t msg_id, uint32_t offset,
+				ipc_msg_kern_t  *kmsg)
+{
+	int ret;
+	msg_item_t *item;
+
+	item = msg_check_read_item(mq, msg_id, offset);
+	if (!item)
+		return ERR_INVALID_ARGS;
 
 	const uint8_t *buf = msg_queue_get_buf(mq, item) + offset;
 	size_t bytes_left = item->len - offset;
 
-	if (msg->type == IPC_MSG_BUFFER_KERNEL) {
-		if (msg->kern.num_handles) {
-			LTRACEF("handles are not supported yet\n");
-			return ERR_NOT_SUPPORTED;
-		}
-		return membuf_to_kern_iovec((const iovec_kern_t *)msg->kern.iov,
-		                            msg->kern.num_iov,
-		                            buf, bytes_left);
-	} else if (msg->type == IPC_MSG_BUFFER_USER) {
-		if (msg->user.num_handles) {
-			LTRACEF("handles are not supported yet\n");
-			return ERR_NOT_SUPPORTED;
-		}
-		return membuf_to_user_iovec(msg->user.iov, msg->user.num_iov,
-		                            buf, bytes_left);
-	} else {
-		return ERR_INVALID_ARGS;
+	ret = membuf_to_kern_iovec((const iovec_kern_t *)kmsg->iov,
+	                            kmsg->num_iov,
+	                            buf, bytes_left);
+	if (ret < 0)
+		return ret;
+
+	uint hcnt = MIN(kmsg->num_handles, item->num_handles);
+	for (uint i = 0; i < hcnt; i++) {
+		handle_incref(item->handles[i]);
+		kmsg->handles[i] = item->handles[i];
 	}
+
+	return ret;
 }
 
+/*
+ * Reads the specified message by copying message data to user space (iov list
+ * is provided by umsg) and associated handles to destination handle array
+ * provided by caller. The message must have been previously moved to the read
+ * list (and thus put into READ state).
+ */
+static int user_msg_read_locked(ipc_msg_queue_t *mq,
+				uint32_t msg_id, uint32_t offset,
+				ipc_msg_user_t *umsg,
+				struct handle **ph, uint *phcnt)
+{
+	int ret;
+	msg_item_t *item;
+
+	item = msg_check_read_item(mq, msg_id, offset);
+	if (!item)
+		return ERR_INVALID_ARGS;
+
+	const uint8_t *buf = msg_queue_get_buf(mq, item) + offset;
+	size_t bytes_left = item->len - offset;
+
+	ret = membuf_to_user_iovec(umsg->iov, umsg->num_iov, buf, bytes_left);
+	if (ret < 0)
+		return ret;
+
+	/* return out handles with additional refs */
+	uint hcnt = MIN(umsg->num_handles, item->num_handles);
+	for (uint i = 0; i < hcnt; i++) {
+		handle_incref(item->handles[i]);
+		ph[i] = item->handles[i];
+	}
+	*phcnt = hcnt;
+
+	return ret;
+}
 
 /*
  *  Is called to look at the head of the filled messages list. It should be followed by
@@ -326,6 +453,7 @@ static int msg_peek_next_filled_locked(ipc_msg_queue_t *mq, ipc_msg_info_t *info
 
 	info->len = item->len;
 	info->id  = item->id;
+	info->num_handles = item->num_handles;
 
 	return NO_ERROR;
 }
@@ -346,10 +474,13 @@ static void msg_get_filled_locked(ipc_msg_queue_t *mq)
 	item->state = MSG_ITEM_STATE_READ;
 }
 
-static int msg_put_read_locked(ipc_chan_t *chan, uint32_t msg_id)
+static int msg_put_read_locked(ipc_chan_t *chan, uint32_t msg_id,
+                               struct handle **ph, uint *phcnt)
 {
 	DEBUG_ASSERT(chan);
 	DEBUG_ASSERT(chan->msg_queue);
+	DEBUG_ASSERT(ph);
+	DEBUG_ASSERT(phcnt);
 
 	ipc_msg_queue_t *mq = chan->msg_queue;
 	msg_item_t *item = msg_queue_get_item(mq, msg_id);
@@ -358,6 +489,14 @@ static int msg_put_read_locked(ipc_chan_t *chan, uint32_t msg_id)
 		return ERR_INVALID_ARGS;
 
 	list_delete(&item->node);
+
+	/* detach handles from table if any */
+	for (uint j = 0; j < item->num_handles; j++) {
+		ph[j] = item->handles[j];
+		item->handles[j] = NULL;
+	}
+	*phcnt = item->num_handles;
+	item->num_handles = 0;
 
 	/* put it on the head since it was just taken off here */
 	list_add_head(&mq->free_list, &item->node);
@@ -370,17 +509,17 @@ static int msg_put_read_locked(ipc_chan_t *chan, uint32_t msg_id)
 long __SYSCALL sys_send_msg(uint32_t handle_id, user_addr_t user_msg)
 {
 	handle_t  *chandle;
-	msg_desc_t tmp_msg;
+	ipc_msg_user_t tmp_msg;
 	int ret;
+	struct uctx *uctx = current_uctx();
 
 	/* copy message descriptor from user space */
-	tmp_msg.type = IPC_MSG_BUFFER_USER;
-	ret = copy_from_user(&tmp_msg.user, user_msg, sizeof(ipc_msg_user_t));
+	ret = copy_from_user(&tmp_msg, user_msg, sizeof(ipc_msg_user_t));
 	if (unlikely(ret != NO_ERROR))
 		return (long) ret;
 
 	/* grab handle */
-	ret = uctx_handle_get(current_uctx(), handle_id, &chandle);
+	ret = uctx_handle_get(uctx, handle_id, &chandle);
 	if (unlikely(ret != NO_ERROR))
 		return (long) ret;
 
@@ -388,7 +527,7 @@ long __SYSCALL sys_send_msg(uint32_t handle_id, user_addr_t user_msg)
 	if (likely(ret == NO_ERROR)) {
 		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		mutex_acquire(&chan->peer->mlock);
-		ret = msg_write_locked(chan, &tmp_msg);
+		ret = msg_write_locked(chan, &tmp_msg, uctx);
 		mutex_release(&chan->peer->mlock);
 		if (ret >= 0) {
 			/* and notify target */
@@ -402,19 +541,15 @@ long __SYSCALL sys_send_msg(uint32_t handle_id, user_addr_t user_msg)
 int ipc_send_msg(handle_t *chandle, ipc_msg_kern_t *msg)
 {
 	int ret;
-	msg_desc_t tmp_msg;
 
 	if (!msg)
 		return ERR_INVALID_ARGS;
-
-	tmp_msg.type = IPC_MSG_BUFFER_KERNEL;
-	memcpy(&tmp_msg.kern, msg, sizeof(ipc_msg_kern_t));
 
 	ret = check_channel(chandle);
 	if (likely(ret == NO_ERROR)) {
 		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		mutex_acquire(&chan->peer->mlock);
-		ret = msg_write_locked(chan, &tmp_msg);
+		ret = msg_write_locked(chan, msg, NULL);
 		mutex_release(&chan->peer->mlock);
 		if (ret >= 0) {
 			handle_notify(&chan->peer->handle);
@@ -502,17 +637,25 @@ int ipc_put_msg(handle_t *chandle, uint32_t msg_id)
 	if (unlikely(ret != NO_ERROR))
 		return ret;
 
+	struct handle *h[MAX_MSG_HANDLES];
+	uint hcnt = 0;
 	bool need_notify = false;
 	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 	/* retire message */
 	mutex_acquire(&chan->mlock);
-	ret = msg_put_read_locked(chan, msg_id);
+	ret = msg_put_read_locked(chan, msg_id, h, &hcnt);
 	if (ret == NO_ERROR &&
 	    (chan->aux_state & IPC_CHAN_AUX_STATE_PEER_SEND_BLOCKED)) {
 		chan->aux_state &= ~IPC_CHAN_AUX_STATE_PEER_SEND_BLOCKED;
 		need_notify = true;
 	}
 	mutex_release(&chan->mlock);
+
+	/* drop handle references outside of the lock */
+	for (uint i = 0; i < hcnt; i++) {
+		handle_decref(h[i]);
+	}
+
 	if (need_notify) {
 		mutex_acquire(&chan->peer->mlock);
 		chan->peer->aux_state |= IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
@@ -522,22 +665,62 @@ int ipc_put_msg(handle_t *chandle, uint32_t msg_id)
 	return ret;
 }
 
+static void user_remove_multiple(struct uctx *uctx,
+                                 handle_id_t *hids, uint hcnt)
+{
+	for (uint i = 0; i < hcnt; i++)
+		uctx_handle_remove(uctx, hids[i], NULL);
+}
+
+static int  user_install_multiple(struct uctx *uctx, struct handle **hptrs,
+                                  handle_id_t *hids, uint hcnt)
+{
+	for (uint i = 0; i < hcnt; i++) {
+		int rc = uctx_handle_install(uctx, hptrs[i], &hids[i]);
+		if (rc) {
+			user_remove_multiple(uctx, hids, i);
+			return rc;
+		}
+	}
+	return 0;
+}
+
+static int user_return_handles(struct uctx *uctx, user_addr_t uhptrs,
+                               struct handle **hptrs, uint hcnt)
+{
+	int rc;
+	handle_id_t hids[hcnt];
+
+	/* install handles */
+	rc = user_install_multiple(uctx, hptrs, hids, hcnt);
+	if (rc < 0)
+		return rc;
+
+	/* copy out handle ids */
+	rc = copy_to_user(uhptrs, hids, hcnt * sizeof(handle_id_t));
+	if (rc < 0) {
+		/* remove installed handles in case of error */
+		user_remove_multiple(uctx, hids, hcnt);
+		return rc;
+	}
+	return 0;
+}
 
 long __SYSCALL sys_read_msg(uint32_t handle_id, uint32_t msg_id, uint32_t offset,
                             user_addr_t user_msg)
 {
 	handle_t  *chandle;
-	msg_desc_t tmp_msg;
+	ipc_msg_user_t msg;
 	int ret;
+	struct uctx *uctx = current_uctx();
 
 	/* get msg descriptor from user space */
-	tmp_msg.type = IPC_MSG_BUFFER_USER;
-	ret = copy_from_user(&tmp_msg.user, user_msg, sizeof(ipc_msg_user_t));
+	ret = copy_from_user(&msg, user_msg, sizeof(ipc_msg_user_t));
 	if (unlikely(ret != NO_ERROR))
 		return (long) ret;
 
 	/* grab handle */
-	ret = uctx_handle_get(current_uctx(), handle_id, &chandle);
+	ret = uctx_handle_get(uctx, handle_id, &chandle);
 	if (unlikely(ret != NO_ERROR))
 		return (long) ret;
 
@@ -545,10 +728,25 @@ long __SYSCALL sys_read_msg(uint32_t handle_id, uint32_t msg_id, uint32_t offset
 	ret = check_channel(chandle);
 	if (ret == NO_ERROR) {
 		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
+		struct handle *h[MAX_MSG_HANDLES];
+		uint hcnt = 0;
+
 		mutex_acquire(&chan->mlock);
-		ret = msg_read_locked(chan->msg_queue, msg_id,
-		                      offset, &tmp_msg);
+		ret = user_msg_read_locked(chan->msg_queue, msg_id, offset,
+		                           &msg, h, &hcnt);
 		mutex_release(&chan->mlock);
+
+		if (ret >= 0 && hcnt) {
+			/* install into caller handle table and copy them out */
+			int rc = user_return_handles(uctx, msg.handles, h, hcnt);
+			if (rc < 0) {
+				ret = rc;
+			}
+
+			/* drop references obtained in user_msg_read_locked */
+			for (uint i = 0; i < hcnt; i++)
+				handle_decref(h[i]);
+		}
 	}
 	handle_decref(chandle);
 
@@ -559,20 +757,16 @@ int ipc_read_msg(handle_t *chandle, uint32_t msg_id, uint32_t offset,
                  ipc_msg_kern_t *msg)
 {
 	int ret;
-	msg_desc_t tmp_msg;
 
 	if (!msg)
 		return ERR_INVALID_ARGS;
-
-	tmp_msg.type = IPC_MSG_BUFFER_KERNEL;
-	memcpy(&tmp_msg.kern, msg, sizeof(ipc_msg_kern_t));
 
 	ret = check_channel(chandle);
 	if (ret == NO_ERROR) {
 		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		mutex_acquire(&chan->mlock);
-		ret = msg_read_locked(chan->msg_queue, msg_id,
-		                      offset, &tmp_msg);
+		ret = kern_msg_read_locked(chan->msg_queue,
+		                           msg_id, offset, msg);
 		mutex_release(&chan->mlock);
 	}
 	return ret;
