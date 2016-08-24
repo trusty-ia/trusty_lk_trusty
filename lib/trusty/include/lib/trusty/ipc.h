@@ -92,6 +92,7 @@ enum {
 
 typedef struct ipc_chan {
 	obj_t			refobj;
+	spin_lock_t		ref_slock;
 	obj_ref_t		peer_ref;
 	struct ipc_chan		*peer;
 	const struct uuid	*uuid;

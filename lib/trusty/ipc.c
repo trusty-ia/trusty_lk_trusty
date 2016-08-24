@@ -397,12 +397,23 @@ static inline void __chan_destroy_refobj(obj_t *ref)
 
 static inline void chan_add_ref(ipc_chan_t *chan, obj_ref_t *ref)
 {
+	spin_lock_saved_state_t state;
+
+	spin_lock_save(&chan->ref_slock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
 	obj_add_ref(&chan->refobj, ref);
+	spin_unlock_restore(&chan->ref_slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
 }
 
 static inline void chan_del_ref(ipc_chan_t *chan, obj_ref_t *ref)
 {
-	obj_del_ref(&chan->refobj, ref, __chan_destroy_refobj);
+	spin_lock_saved_state_t state;
+
+	spin_lock_save(&chan->ref_slock, &state, SPIN_LOCK_FLAG_INTERRUPTS);
+	bool last = obj_del_ref(&chan->refobj, ref, NULL);
+	spin_unlock_restore(&chan->ref_slock, state, SPIN_LOCK_FLAG_INTERRUPTS);
+
+	if (last)
+		__chan_destroy_refobj(&chan->refobj);
 }
 
 /*
@@ -427,7 +438,8 @@ static ipc_chan_t *chan_alloc(uint32_t flags, const uuid_t *uuid,
 	if (!chan)
 		return NULL;
 
-	/* init ref count */
+	/* init ref object and associated lock */
+	spin_lock_init(&chan->ref_slock);
 	obj_init(&chan->refobj, ref);
 
 	/* init refs */
@@ -500,9 +512,7 @@ static void chan_handle_destroy(handle_t *chandle)
 	DEBUG_ASSERT(ipc_is_channel(chandle));
 
 	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
-	mutex_acquire(&ipc_lock);
 	chan_del_ref(chan, &chan->handle_ref);
-	mutex_release(&ipc_lock);
 }
 
 /*
