@@ -273,7 +273,7 @@ platform_mon_initial_ns_return:
 	cmp	lr, #SMC_FC_FIQ_EXIT
 	beq	.Lmon_fiq_exit_return
 
-	SWITCH_SCR_TO_NONSECURE r4
+	SWITCH_SCR_TO_NONSECURE r3
 	mov	r0, r1	/* secure os passes the return code in r1 */
 
 	add	sp, sp, #5 * 4
