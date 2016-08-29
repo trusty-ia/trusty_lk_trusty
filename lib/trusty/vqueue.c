@@ -59,7 +59,6 @@ int vqueue_init(struct vqueue *vq, uint32_t id,
 	                         ARCH_MMU_FLAG_CACHED);
 	if (ret != NO_ERROR) {
 		LTRACEF("cannot map vring (%d)\n", ret);
-		free(vq);
 		return (int) ret;
 	}
 
