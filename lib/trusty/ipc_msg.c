@@ -191,37 +191,32 @@ static int check_channel_locked(handle_t *chandle)
 	if (unlikely(!ipc_is_channel(chandle)))
 		return ERR_INVALID_ARGS;
 
-	return NO_ERROR;
-}
-
-static int check_channel_connected_locked(handle_t *chandle)
-{
-	int ret = check_channel_locked(chandle);
-	if (unlikely(ret != NO_ERROR))
-		return ret;
-
 	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 
-	if (likely(chan->state == IPC_CHAN_STATE_CONNECTED)) {
-		DEBUG_ASSERT(chan->peer); /* there should be peer */
-		return NO_ERROR;
-	}
-
-	if (likely(chan->state == IPC_CHAN_STATE_DISCONNECTING))
-		return ERR_CHANNEL_CLOSED;
-	else
+	if (unlikely(!chan->peer))
 		return ERR_NOT_READY;
+
+	return NO_ERROR;
 }
 
 static int msg_write_locked(ipc_chan_t *chan, msg_desc_t *msg)
 {
 	ssize_t ret;
 	msg_item_t *item;
-	ipc_msg_queue_t *mq = chan->peer->msg_queue;
+	ipc_chan_t *peer = chan->peer;
+
+	if (peer->state != IPC_CHAN_STATE_CONNECTED) {
+		if (likely(peer->state == IPC_CHAN_STATE_DISCONNECTING))
+			return ERR_CHANNEL_CLOSED;
+		else
+			return ERR_NOT_READY;
+	}
+
+	ipc_msg_queue_t *mq = peer->msg_queue;
 
 	item = list_peek_head_type(&mq->free_list, msg_item_t, node);
 	if (item == NULL) {
-		chan->aux_state |= IPC_CHAN_AUX_STATE_SEND_BLOCKED;
+		peer->aux_state |= IPC_CHAN_AUX_STATE_PEER_SEND_BLOCKED;
 		return ERR_NOT_ENOUGH_BUFFER;
 	}
 
@@ -370,13 +365,6 @@ static int msg_put_read_locked(ipc_chan_t *chan, uint32_t msg_id)
 	list_add_head(&mq->free_list, &item->node);
 	item->state = MSG_ITEM_STATE_FREE;
 
-	ipc_chan_t *peer = chan->peer;
-	if (peer && (peer->aux_state & IPC_CHAN_AUX_STATE_SEND_BLOCKED)) {
-		peer->aux_state &= ~IPC_CHAN_AUX_STATE_SEND_BLOCKED;
-		peer->aux_state |=  IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
-		handle_notify(&peer->handle);
-	}
-
 	return NO_ERROR;
 }
 
@@ -400,7 +388,7 @@ long __SYSCALL sys_send_msg(uint32_t handle_id, user_addr_t user_msg)
 
 	mutex_acquire(&ipc_lock);
 	/* check if it is  avalid channel to call send_msg */
-	ret = check_channel_connected_locked(chandle);
+	ret = check_channel_locked(chandle);
 	if (likely(ret == NO_ERROR)) {
 		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		/* do write message to target channel  */
@@ -427,7 +415,7 @@ int ipc_send_msg(handle_t *chandle, ipc_msg_kern_t *msg)
 	memcpy(&tmp_msg.kern, msg, sizeof(ipc_msg_kern_t));
 
 	mutex_acquire(&ipc_lock);
-	ret = check_channel_connected_locked(chandle);
+	ret = check_channel_locked(chandle);
 	if (likely(ret == NO_ERROR)) {
 		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 		ret = msg_write_locked(chan, &tmp_msg);
@@ -516,11 +504,23 @@ int ipc_put_msg(handle_t *chandle, uint32_t msg_id)
 	mutex_acquire(&ipc_lock);
 	/* check is channel handle is a valid one */
 	ret = check_channel_locked(chandle);
-	if (likely(ret == NO_ERROR)) {
-		ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
-		/* retire message */
-		ret = msg_put_read_locked(chan, msg_id);
+	if (unlikely(ret != NO_ERROR))
+		goto err_check;
+
+	bool need_notify = false;
+	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
+	/* retire message */
+	ret = msg_put_read_locked(chan, msg_id);
+	if (ret == NO_ERROR &&
+	    (chan->aux_state & IPC_CHAN_AUX_STATE_PEER_SEND_BLOCKED)) {
+		chan->aux_state &= ~IPC_CHAN_AUX_STATE_PEER_SEND_BLOCKED;
+		need_notify = true;
 	}
+	if (need_notify) {
+		chan->peer->aux_state |= IPC_CHAN_AUX_STATE_SEND_UNBLOCKED;
+		handle_notify(&chan->peer->handle);
+	}
+err_check:
 	mutex_release(&ipc_lock);
 	return ret;
 }
