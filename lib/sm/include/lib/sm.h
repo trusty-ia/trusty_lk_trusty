@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Google Inc. All rights reserved
+ * Copyright (c) 2013-2016 Google Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -44,6 +44,7 @@ typedef long (*smc32_handler_t)(smc32_args_t *args);
 
 typedef struct smc32_entity {
 	smc32_handler_t fastcall_handler;
+	smc32_handler_t nopcall_handler;
 	smc32_handler_t stdcall_handler;
 } smc32_entity_t;
 

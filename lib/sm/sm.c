@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Google Inc. All rights reserved
+ * Copyright (c) 2013-2016 Google Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -75,6 +75,7 @@ struct sm_std_call_state stdcallstate = {
 };
 
 extern smc32_handler_t sm_stdcall_table[];
+extern smc32_handler_t sm_nopcall_table[];
 
 long smc_sm_api_version(smc32_args_t *args)
 {
@@ -194,10 +195,10 @@ static void sm_return_and_wait_for_next_stdcall(long ret, int cpu)
 		/* Allow concurrent SMC_SC_NOP calls on multiple cpus */
 		if (args.smc_nr == SMC_SC_NOP) {
 			LTRACEF_LEVEL(3, "cpu %d, got nop\n", cpu);
-			break;
+			ret = sm_nopcall_table[SMC_ENTITY(args.params[0])](&args);
+		} else {
+			ret = sm_queue_stdcall(&args);
 		}
-
-		ret = sm_queue_stdcall(&args);
 	} while (ret);
 }
 

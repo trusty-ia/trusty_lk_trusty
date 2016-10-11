@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013 Google Inc. All rights reserved
+ * Copyright (c) 2013-2016 Google Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -81,6 +81,14 @@ static long smc_restart_stdcall(smc32_args_t *args)
 static long smc_nop_stdcall(smc32_args_t *args)
 {
 	return 0;
+}
+
+/*
+ * parameterized nop call handler
+ */
+static long smc_nop_secure_monitor(smc32_args_t *args)
+{
+	return (!args->params[0]) ? 0 : SM_ERR_UNDEFINED_SMC;
 }
 
 static smc32_handler_t sm_stdcall_function_table[] = {
@@ -171,6 +179,11 @@ smc32_handler_t sm_fastcall_table[SMC_NUM_ENTITIES] = {
 	[SMC_ENTITY_SECURE_MONITOR + 1 ... SMC_NUM_ENTITIES - 1] = smc_undefined
 };
 
+smc32_handler_t sm_nopcall_table[SMC_NUM_ENTITIES] = {
+	[0] = smc_nop_secure_monitor,
+	[1 ... SMC_NUM_ENTITIES - 1] = smc_undefined
+};
+
 smc32_handler_t sm_stdcall_table[SMC_NUM_ENTITIES] = {
 	[0 ... SMC_ENTITY_SECURE_MONITOR - 1] = smc_undefined,
 	[SMC_ENTITY_SECURE_MONITOR] = smc_stdcall_secure_monitor,
@@ -197,6 +210,7 @@ status_t sm_register_entity(uint entity_nr, smc32_entity_t *entity)
 
 	/* Check if entity is already claimed */
 	if (sm_fastcall_table[entity_nr] != smc_undefined ||
+		sm_nopcall_table[entity_nr] != smc_undefined ||
 		sm_stdcall_table[entity_nr] != smc_undefined) {
 		err = ERR_ALREADY_EXISTS;
 		goto unlock;
@@ -204,6 +218,9 @@ status_t sm_register_entity(uint entity_nr, smc32_entity_t *entity)
 
 	if (entity->fastcall_handler)
 		sm_fastcall_table[entity_nr] = entity->fastcall_handler;
+
+	if (entity->nopcall_handler)
+		sm_nopcall_table[entity_nr] = entity->nopcall_handler;
 
 	if (entity->stdcall_handler)
 		sm_stdcall_table[entity_nr] = entity->stdcall_handler;
