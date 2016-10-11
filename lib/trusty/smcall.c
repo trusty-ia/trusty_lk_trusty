@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2015, Google, Inc. All rights reserved
+ * Copyright (c) 2013-2016, Google, Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -147,8 +147,36 @@ static long trusty_sm_stdcall(smc32_args_t *args)
 	return to_smc_error(res);
 }
 
+/*
+ *  Handle parameterized NOP Trusted OS SMC call function
+ */
+static long trusty_sm_nopcall(smc32_args_t *args)
+{
+	long res;
+
+	LTRACEF("Trusty SM service func %u args 0x%x 0x%x 0x%x\n",
+		SMC_FUNCTION(args->smc_nr),
+		args->params[0],
+		args->params[1],
+		args->params[2]);
+
+	switch (args->params[0]) {
+	case SMC_NC_VDEV_KICK_VQ:
+		res = virtio_kick_vq(args->params[1], args->params[2]);
+		break;
+
+	default:
+		LTRACEF("unknown func 0x%x\n", SMC_FUNCTION(args->smc_nr));
+		res = ERR_NOT_SUPPORTED;
+		break;
+	}
+
+	return to_smc_error(res);
+}
+
 static smc32_entity_t trusty_sm_entity = {
 	.stdcall_handler = trusty_sm_stdcall,
+	.nopcall_handler = trusty_sm_nopcall
 };
 
 static void trusty_sm_init(uint level)

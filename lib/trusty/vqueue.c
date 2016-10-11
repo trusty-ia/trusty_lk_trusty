@@ -98,8 +98,8 @@ void vqueue_signal_avail(struct vqueue *vq)
 	spin_lock_save(&vq->slock, &state, VQ_LOCK_FLAGS);
 	if (vq->vring_addr)
 		vq->vring.used->flags |= VRING_USED_F_NO_NOTIFY;
+	event_signal(&vq->avail_event, false);
 	spin_unlock_restore(&vq->slock, state, VQ_LOCK_FLAGS);
-	event_signal(&vq->avail_event, true);
 }
 
 /* The other side of virtio pushes buffers into our avail ring, and pulls them

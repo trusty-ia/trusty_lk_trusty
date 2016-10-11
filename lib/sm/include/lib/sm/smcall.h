@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 Google Inc. All rights reserved
+ * Copyright (c) 2013-2016 Google Inc. All rights reserved
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -120,7 +120,8 @@
  */
 #define TRUSTY_API_VERSION_RESTART_FIQ	(1)
 #define TRUSTY_API_VERSION_SMP		(2)
-#define TRUSTY_API_VERSION_CURRENT	(2)
+#define TRUSTY_API_VERSION_SMP_NOP	(3)
+#define TRUSTY_API_VERSION_CURRENT	(3)
 #define SMC_FC_API_VERSION	SMC_FASTCALL_NR (SMC_ENTITY_SECURE_MONITOR, 11)
 
 /* TRUSTED_OS entity calls */
@@ -130,5 +131,6 @@
 
 #define SMC_SC_VDEV_RESET	SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 23)
 #define SMC_SC_VDEV_KICK_VQ	SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 24)
+#define SMC_NC_VDEV_KICK_VQ	SMC_STDCALL_NR(SMC_ENTITY_TRUSTED_OS, 25)
 
 #endif /* __LIB_SM_SMCALL_H */
