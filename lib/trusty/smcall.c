@@ -31,6 +31,7 @@
 #include <arch/mmu.h>
 #include <lib/sm.h>
 #include <lib/sm/smcall.h>
+#include <lib/sm/sm_err.h>
 
 #include "trusty_virtio.h"
 
@@ -68,6 +69,29 @@ static status_t get_ns_mem_buf(struct smc32_args *args,
 	}
 
 	return NO_ERROR;
+}
+
+/*
+ * Translate intermal errors to SMC errors
+ */
+static long to_smc_error(long err)
+{
+	if (err >= 0)
+		return err;
+
+	switch (err) {
+	case ERR_INVALID_ARGS:
+		return SM_ERR_INVALID_PARAMETERS;
+
+	case ERR_NOT_SUPPORTED:
+		return SM_ERR_NOT_SUPPORTED;
+
+	case ERR_NOT_ALLOWED:
+		return SM_ERR_NOT_ALLOWED;
+
+	default:
+		return SM_ERR_INTERNAL_FAILURE;
+	}
 }
 
 /*
@@ -120,7 +144,7 @@ static long trusty_sm_stdcall(smc32_args_t *args)
 		break;
 	}
 
-	return res;
+	return to_smc_error(res);
 }
 
 static smc32_entity_t trusty_sm_entity = {
