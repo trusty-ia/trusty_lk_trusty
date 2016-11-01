@@ -34,6 +34,7 @@
 #include <kernel/thread.h>
 #include <malloc.h>
 #include <platform.h>
+#include <platform/sand.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -271,6 +272,8 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 	vaddr_t start_data = 0;
 	vaddr_t end_code = 0;
 	vaddr_t end_data = 0;
+	vaddr_t mmio_vaddr;
+	paddr_t mmio_paddr;
 
 	trusty_app_image = trusty_app->app_img;
 	trusty_app_idx = trusty_app - trusty_app_list;
@@ -368,6 +371,16 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 			       size - prg_hdr->p_memsz);
 		}
 	}
+
+	/* add the mmio map for each app */
+	mmio_vaddr = mmio_paddr = g_mmio_base_addr;
+	ret = uthread_map_contig(trusty_app->ut, &mmio_vaddr, mmio_paddr, 4096,
+			 UTM_W | UTM_R | UTM_FIXED, UT_MAP_ALIGN_4KB);
+	if (ret) {
+		dprintf(INFO, "cannot map the mmio\n");
+		return ret;
+	}
+
 
 	ret = init_brk(trusty_app);
 	if (ret != NO_ERROR) {

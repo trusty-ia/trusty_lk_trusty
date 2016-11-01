@@ -40,6 +40,8 @@
 
 #define LOG_LOCK_FLAGS SPIN_LOCK_FLAG_IRQ_FIQ
 
+int having_print_cb = 0;
+
 struct memlog {
 	struct log_rb *rb;
 	size_t rb_sz;
@@ -195,6 +197,7 @@ long memlog_add(paddr_t pa, size_t sz)
 
 	log->cb.print = memlog_print_callback;
 	register_print_callback(&log->cb);
+	having_print_cb = 1;
 	/* flush the LK's init log to the registered print_cb and disable tee buffer then. */
 	disable_tee_buffer(&log->cb);
 
