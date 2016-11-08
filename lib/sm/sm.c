@@ -186,6 +186,10 @@ static void sm_return_and_wait_for_next_stdcall(long ret, int cpu)
 {
 	smc32_args_t args = {0};
 
+#if WITH_SM_WALL
+	sm_wall_update();
+#endif
+
 	do {
 		arch_disable_fiqs();
 		sm_sched_nonsecure(ret, &args);

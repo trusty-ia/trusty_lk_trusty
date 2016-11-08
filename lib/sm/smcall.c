@@ -89,6 +89,10 @@ static smc32_handler_t sm_stdcall_function_table[] = {
 	[SMC_FUNCTION(SMC_SC_LOCKED_NOP)] = smc_nop_stdcall,
 	[SMC_FUNCTION(SMC_SC_RESTART_FIQ)] = smc_restart_stdcall,
 	[SMC_FUNCTION(SMC_SC_NOP)] = smc_undefined, /* reserve slot in table, not called */
+#if WITH_SM_WALL
+	[SMC_FUNCTION(SMC_SC_SETUP_WALL)] = smc_setup_wall_stdcall,
+	[SMC_FUNCTION(SMC_SC_DESTROY_WALL)] = smc_destroy_wall_stdcall,
+#endif
 };
 
 static long smc_stdcall_secure_monitor(smc32_args_t *args)
@@ -161,6 +165,9 @@ smc32_handler_t sm_fastcall_function_table[] = {
 	[SMC_FUNCTION(SMC_FC_GET_VERSION_STR)] = smc_get_version_str,
 #endif
 	[SMC_FUNCTION(SMC_FC_API_VERSION)] = smc_sm_api_version,
+#if WITH_SM_WALL
+	[SMC_FUNCTION(SMC_FC_GET_WALL_SIZE)] = smc_get_wall_size,
+#endif
 };
 
 uint32_t sm_nr_fastcall_functions = countof(sm_fastcall_function_table);

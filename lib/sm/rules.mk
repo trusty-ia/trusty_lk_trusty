@@ -36,6 +36,12 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/smcall.c \
 	$(LOCAL_DIR)/ns_mem.c \
 
+ifeq (true,$(call TOBOOL,$(WITH_SM_WALL)))
+GLOBAL_DEFINES += WITH_SM_WALL=1
+MODULE_SRCS += \
+	$(LOCAL_DIR)/smwall.c
+endif
+
 include $(LOCAL_DIR)/arch/$(ARCH)/rules.mk
 
 include make/module.mk

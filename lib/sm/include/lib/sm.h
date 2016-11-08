@@ -23,6 +23,7 @@
 #ifndef __SM_H
 #define __SM_H
 
+#include <list.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/types.h>
@@ -78,6 +79,36 @@ status_t sm_register_entity(uint entity_nr, smc32_entity_t *entity);
 /* Helper function to get NS memory buffer info out of smc32 call params */
 status_t smc32_decode_mem_buf_info(struct smc32_args *args, ns_addr_t *ppa,
                                    ns_size_t *psz, uint *pmmu);
+
+/* sm_wall */
+#if WITH_SM_WALL
+
+struct sm_wall_item {
+	struct list_node node;
+	void (*update_cb)(struct sm_wall_item *wi, void *item);
+	uint32_t item_id;
+	uint32_t size;
+	uint32_t offset;
+};
+
+#define SM_WALL_ITEM_INITIALIZE(id, cb, sz) \
+{                                           \
+	.node = LIST_INITIAL_CLEARED_VALUE,     \
+	.item_id = (id),                        \
+	.update_cb = (cb),                      \
+	.size  = (sz),                          \
+	.offset = 0,                            \
+}
+
+void sm_wall_register_per_cpu_item(struct sm_wall_item *wi);
+void sm_wall_update(void);
+
+/* smc handlers */
+long smc_get_wall_size(smc32_args_t *args);
+long smc_setup_wall_stdcall(smc32_args_t *args);
+long smc_destroy_wall_stdcall(smc32_args_t *args);
+
+#endif /* WITH_SM_WALL */
 
 #endif /* __SM_H */
 
