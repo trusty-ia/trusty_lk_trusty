@@ -268,7 +268,7 @@ long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
  * Based on the design the IMR region for LK will reserved some bytes for ROT
  * and seed storage (size = sizeof(seed_response_t)+sizeof(rot_data_t))
  */
-long sys_get_device_info(user_addr_t * info)
+long sys_get_device_info(user_addr_t * info, bool need_seed)
 {
 	long    ret = 0;
 	trusty_device_info_t *   dev_info = NULL;
@@ -288,6 +288,10 @@ long sys_get_device_info(user_addr_t * info)
 	/* for Km1.0 no need the osVersion and patchMonthYear */
 	dev_info->rot.osVersion = 0;
 	dev_info->rot.patchMonthYear = 0;
+
+	if(!need_seed)
+		/* seed is the sensitive secret date, do not return to user app if it is not required. */
+		memset(dev_info->seed, 0, sizeof(dev_info->seed));
 
 	ret = copy_to_user(info, dev_info, sizeof(trusty_device_info_t));
 	if (ret != NO_ERROR)
