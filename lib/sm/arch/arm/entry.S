@@ -66,7 +66,11 @@ FUNCTION(sm_sched_nonsecure)
 	stmia	r12, {r0-r3}
 	bx	lr
 
+#if LIB_SM_WITH_PLATFORM_RESET
+FUNCTION(sm_reset)
+#else
 FUNCTION(platform_reset)
+#endif
 #if WITH_LIB_SM_MONITOR
 	cps	#MODE_MON
 	bl	monitor_reset
@@ -84,8 +88,9 @@ FUNCTION(platform_reset)
 	bne     arm_reset
 #endif
 
-	adr	sp, platform_reset	/* sp = paddr */
-	ldr	ip, =platform_reset	/* ip = vaddr */
+.Lphys_offset:
+	adr	sp, .Lphys_offset	/* sp = paddr */
+	ldr	ip, =.Lphys_offset	/* ip = vaddr */
 	sub	ip, sp, ip		/* ip = phys_offset */
 
 	/* patch mmu_initial_mappings table */
