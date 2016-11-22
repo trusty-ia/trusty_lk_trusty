@@ -184,6 +184,7 @@ static int _vqueue_get_avail_buf_locked(struct vqueue *vq,
 			/* .base will be set when we map this iov */
 			iovlist->iovs[iovlist->used].len = desc->len;
 			iovlist->phys[iovlist->used] = (paddr_t) desc->addr;
+			assert(iovlist->phys[iovlist->used] == desc->addr);
 			iovlist->used++;
 			iovlist->len += desc->len;
 		} else {
