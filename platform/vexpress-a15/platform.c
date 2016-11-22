@@ -142,7 +142,7 @@ void platform_early_init(void)
 
 #if WITH_SMP
 	dprintf(INFO, "Booting secondary CPUs. Main CPU MPIDR = %x\n", read_mpidr());
-	platform_secondary_entry_paddr = kvaddr_to_paddr(platform_secondary_entry);
+	platform_secondary_entry_paddr = vaddr_to_paddr(platform_secondary_entry);
 	writel(platform_secondary_entry_paddr, SECONDARY_BOOT_ADDR);
 	arm_gic_sgi(0, ARM_GIC_SGI_FLAG_TARGET_FILTER_NOT_SENDER, 0);
 #endif
