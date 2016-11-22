@@ -36,8 +36,12 @@ FUNCTION(sm_sched_nonsecure)
 	mov	r1, r0
 
 .Lreturn_sm_err:
+#if LIB_SM_WITH_PLATFORM_NS_RETURN
+	bl	platform_ns_return
+#else
 	ldr	r0, =SMC_SC_NS_RETURN
 	smc	#0
+#endif
 
 	tst	r0, #(1 << 30)		/* Check calling convention */
 	movne	r1, #SM_ERR_NOT_SUPPORTED
