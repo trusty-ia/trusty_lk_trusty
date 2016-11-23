@@ -314,9 +314,12 @@ long sys_get_device_info(user_addr_t * info, bool need_seed)
 		/* seed is the sensitive secret date, do not return to user app if it is not required. */
 		memset(dev_info->seed, 0, sizeof(dev_info->seed));
 
+	dev_info->state.data = 0; /* todo: check if glv uses PCI_READ_FUSE(HECI1); */
+
 	ret = copy_to_user(info, dev_info, sizeof(trusty_device_info_t));
 	if (ret != NO_ERROR)
 		panic("failed (%d) to copy structure to user\n", ret);
 
 	return NO_ERROR;
 }
+
