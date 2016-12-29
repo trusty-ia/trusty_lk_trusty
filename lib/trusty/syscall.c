@@ -291,7 +291,7 @@ long sys_get_device_info(user_addr_t * info, bool need_seed)
 	long    ret = 0;
 	trusty_device_info_t *   dev_info = NULL;
 
-	if (!valid_ta_to_retrieve_seed())
+	if (need_seed && !valid_ta_to_retrieve_seed())
 		panic("the caller is invalid!\n");
 
 	if (!info || !g_trusty_startup_info)
