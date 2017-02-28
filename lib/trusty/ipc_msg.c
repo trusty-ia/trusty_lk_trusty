@@ -75,7 +75,7 @@ typedef struct msg_item {
 	struct list_node	node;
 } msg_item_t;
 
-typedef struct ipc_msg_queue {
+struct ipc_msg_queue {
 	struct list_node	free_list;
 	struct list_node	filled_list;
 	struct list_node	read_list;
@@ -91,7 +91,7 @@ typedef struct ipc_msg_queue {
 	 * be mapped into the process directly.
 	 */
 	msg_item_t		items[0];
-} ipc_msg_queue_t;
+};
 
 enum {
 	IPC_MSG_BUFFER_USER	= 0,
