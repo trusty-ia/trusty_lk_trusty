@@ -37,7 +37,6 @@
 
 #define LOCAL_TRACE	0
 
-#define LTRACEF_LEVEL(level, x...) do { if (LOCAL_TRACE >= level) { TRACEF(x); } } while (0)
 
 struct sm_std_call_state {
 	spin_lock_t lock;
