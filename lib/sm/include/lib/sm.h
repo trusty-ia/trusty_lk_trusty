@@ -40,6 +40,8 @@ typedef struct smc32_args {
 	uint32_t params[SMC_NUM_PARAMS];
 } smc32_args_t;
 
+#define SMC32_ARGS_INITIAL_VALUE(args) {0, {0}}
+
 typedef long (*smc32_handler_t)(smc32_args_t *args);
 
 typedef struct smc32_entity {

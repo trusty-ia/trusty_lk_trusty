@@ -185,7 +185,7 @@ err:
 /* must be called with irqs disabled */
 static void sm_return_and_wait_for_next_stdcall(long ret, int cpu)
 {
-	smc32_args_t args = {0};
+	smc32_args_t args = SMC32_ARGS_INITIAL_VALUE(args);
 
 	do {
 		arch_disable_fiqs();
@@ -427,7 +427,7 @@ enum handler_return sm_handle_irq(void)
 void sm_handle_fiq(void)
 {
 	uint32_t expected_return;
-	smc32_args_t args = {0};
+	smc32_args_t args = SMC32_ARGS_INITIAL_VALUE(args);
 	if (sm_get_api_version() >= TRUSTY_API_VERSION_RESTART_FIQ) {
 		sm_sched_nonsecure(SM_ERR_FIQ_INTERRUPTED, &args);
 		expected_return = SMC_SC_RESTART_FIQ;
