@@ -51,7 +51,7 @@ struct mmu_initial_mapping mmu_initial_mappings[] = {
 	  .name = "ram" },
 
 	/* null entry to terminate the list */
-	{ 0 }
+	{0, 0, 0, 0, 0}
 };
 
 static pmm_arena_t ram_arena = {
