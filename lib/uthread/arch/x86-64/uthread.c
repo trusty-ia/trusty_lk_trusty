@@ -73,18 +73,12 @@ void arch_uthread_startup(void)
 {
     /**** This is x86 ring jump ****/
     struct uthread *ut = (struct uthread *) tls_get(TLS_ENTRY_UTHREAD);
-    /*
-     * User space is passed params using user stack(*args).
-     * On x86, params on stack. So, 4 bytes of user stack should be
-     * zeroed out. Not able to write to user stack. And stack
-     * mapping is done in arch independent code.So, keeping 8 byte hole
-     */
-    uint32_t STACK_BOUNDRY = 0x08;
+
     uint64_t paddr = 0, flags = 0;
-    register uint64_t sp_usr =  ut->start_stack - STACK_BOUNDRY;
+    register uint64_t sp_usr  = ROUNDDOWN(ut->start_stack, 8);
     register uint64_t entry = ut->entry;
-    register uint64_t code_seg = USER_CODE_COMPAT_SELECTOR | USER_DPL;
-    register uint64_t data_seg = USER_DATA_COMPAT_SELECTOR | USER_DPL;
+    register uint64_t code_seg = USER_CODE_64_SELECTOR | USER_DPL;
+    register uint64_t data_seg = USER_DATA_64_SELECTOR | USER_DPL;
     register uint64_t usr_flags = USER_EFLAGS;
 
     arch_mmu_query(sp_usr, &paddr, &flags);

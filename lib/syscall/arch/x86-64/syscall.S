@@ -56,6 +56,7 @@ FUNCTION (x86_syscall)
      */
     movq $SYSCALL_ENTRY_SIZE, %r15
     /* Result is stored in rax. Before multiplication rax contains syscall No */
+
     mul %r15
     leaq syscall_table(%rip), %r14
     add %r14, %rax
@@ -79,4 +80,5 @@ FUNCTION (x86_syscall)
 
     popq %rcx /* pop esp */
     popq %rdx /* pop eip */
+    .byte 72
     sysexit

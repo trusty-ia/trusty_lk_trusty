@@ -34,7 +34,7 @@ typedef struct iovec_kern {
 
 typedef struct iovec_user {
 	user_addr_t	base;
-	uint32_t	len;
+	size_t	len;
 } iovec_user_t;
 
 

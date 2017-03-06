@@ -33,8 +33,13 @@ struct uthread;
 struct uthread_map;
 
 /* Holds a vaddr large enough for 32 or 64 bit clients */
+#if defined(__x86_64)
+typedef uint64_t ext_vaddr_t;
+typedef uint64_t user_addr_t;
+#else
 typedef uint64_t ext_vaddr_t;
 typedef uint32_t user_addr_t;
+#endif
 
 void arch_uthread_init(void);
 

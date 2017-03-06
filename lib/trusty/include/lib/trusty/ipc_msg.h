@@ -64,7 +64,7 @@ typedef struct ipc_msg_user {
 } ipc_msg_user_t;
 
 typedef struct ipc_msg_info {
-	uint32_t	len;
+	size_t	len;
 	uint32_t	id;
 } ipc_msg_info_t;
 
