@@ -32,4 +32,8 @@ ifeq ($(TARGET), pc-x86) || ($(TARGET), generic-x86 || ($(TARGET), generic-x86-6
 endif
 endif
 
+ifneq (,$(findstring PLATFORM_HAS_DYNAMIC_TIMER=1,$(GLOBAL_DEFINES)))
+MODULE_CFLAGS += -DWITH_LIB_DYNAMIC_TIMER=1
+endif
+
 CUR_DIR :=
