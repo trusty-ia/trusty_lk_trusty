@@ -152,7 +152,7 @@ void arch_uthread_free(struct uthread *ut)
 status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
 {
     addr_t vaddr, paddr;
-    u_int pg, l1_flags, l2_flags;
+    u_int pg, flags;
     status_t err = NO_ERROR;
     static addr_t app_page_table =0;
 
@@ -162,7 +162,15 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
     }
 
     ASSERT(!(mp->size & PAGE_MASK));
-    l1_flags = mp->flags | ARCH_MMU_FLAG_PERM_USER;
+    /*we need to convert UTM flags to generic mmu falgs
+     *default memory type is WB cache.
+     */
+    flags = ARCH_MMU_FLAG_PERM_USER;
+    if ( (mp->flags & UTM_R) && !(mp->flags & UTM_W))
+        flags |= ARCH_MMU_FLAG_PERM_RO;
+
+    if (!(mp->flags & UTM_X))
+        flags |= ARCH_MMU_FLAG_PERM_NO_EXECUTE;
 
     for (pg = 0; pg < (mp->size / PAGE_SIZE); pg++) {
         if (mp->flags & UTM_PHYS_CONTIG)
@@ -172,7 +180,7 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
 
         /* MMIO memory mapping requests should not be cached */
         if (mp->flags & UTM_IO) {
-            l1_flags |= ARCH_MMU_FLAG_UNCACHED;
+            flags |= ARCH_MMU_FLAG_UNCACHED;
         }
 
         if (paddr & PAGE_MASK) {
@@ -181,7 +189,7 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
         }
 
         vaddr = mp->vaddr + (pg * PAGE_SIZE);
-        err = x86_uthread_mmu_map(ut, paddr, vaddr, l1_flags);
+        err = x86_uthread_mmu_map(ut, paddr, vaddr, flags);
         if (err)
             goto err_undo_maps;
     }
