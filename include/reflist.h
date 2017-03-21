@@ -73,7 +73,7 @@ bool obj_del_ref(obj_t *obj, obj_ref_t *ref, obj_destroy_func destroy)
 
 	list_delete(&ref->ref_node);
 	dead = list_is_empty(&obj->ref_list);
-	if (dead)
+	if (dead && destroy)
 		destroy(obj);
 	return dead;
 }
