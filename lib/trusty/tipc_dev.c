@@ -103,9 +103,9 @@ struct tipc_dev {
 struct tipc_hdr {
 	uint32_t src;
 	uint32_t dst;
-	uint32_t reserved;
-	uint16_t len;
+	uint32_t len;
 	uint16_t flags;
+	uint16_t reserved;
 	uint8_t data[0];
 } __PACKED;
 
