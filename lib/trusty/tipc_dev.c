@@ -308,7 +308,7 @@ static int handle_conn_req(struct tipc_dev *dev, uint32_t remote,
 		local = alloc_local_addr(dev, remote, chan);
 		if (local == 0) {
 			LTRACEF("failed to alloc local address\n");
-			handle_close(chan);
+			handle_decref(chan);
 			chan = NULL;
 		}
 		mutex_release(&dev->ept_lock);
@@ -371,7 +371,7 @@ static int handle_disc_req(struct tipc_dev *dev, uint32_t remote,
 			handle_set_cookie(chan, NULL);
 
 			/* close handle */
-			handle_close(chan);
+			handle_decref(chan);
 		}
 
 		free_local_addr(dev, ept_to_addr(dev, ept));
@@ -672,7 +672,7 @@ static void handle_hup(struct tipc_dev *dev, handle_t *chan)
 		handle_set_cookie(chan, NULL);
 
 		/* close it */
-		handle_close(chan);
+		handle_decref(chan);
 
 		/* free_local_address */
 		free_local_addr(dev, local);
@@ -810,7 +810,7 @@ static status_t tipc_dev_reset(struct tipc_dev *dev)
 
 		handle_list_del(&dev->handle_list, ept->chan);
 		handle_set_cookie(ept->chan, NULL);
-		handle_close(ept->chan);
+		handle_decref(ept->chan);
 		free_local_addr(dev, ept_to_addr(dev, ept));
 	}
 	mutex_release(&dev->ept_lock);

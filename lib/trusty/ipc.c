@@ -60,7 +60,6 @@ static void port_shutdown(handle_t *handle);
 static void port_handle_destroy(handle_t *handle);
 
 static uint32_t chan_poll(handle_t *handle, uint32_t emask, bool finalize);
-static void chan_shutdown(handle_t *handle);
 static void chan_handle_destroy(handle_t *handle);
 
 static ipc_port_t *port_find_locked(const char *path);
@@ -71,13 +70,11 @@ static void chan_del_ref(ipc_chan_t *conn, obj_ref_t *ref);
 
 static struct handle_ops ipc_port_handle_ops = {
 	.poll		= port_poll,
-	.shutdown	= port_shutdown,
 	.destroy	= port_handle_destroy,
 };
 
 static struct handle_ops ipc_chan_handle_ops = {
 	.poll		= chan_poll,
-	.shutdown	= chan_shutdown,
 	.destroy	= chan_handle_destroy,
 };
 
@@ -174,13 +171,9 @@ static void port_shutdown(handle_t *phandle)
 
 	LTRACEF("shutting down port %p\n", port);
 
-	/* change status to closing  */
-	port->state = IPC_PORT_STATE_CLOSING;
-
 	/* detach it from global list if it is in the list */
 	if (list_in_list(&port->node)) {
 		list_delete(&port->node);
-		handle_decref(phandle);
 	}
 
 	/* tear down pending connections */
@@ -195,11 +188,6 @@ static void port_shutdown(handle_t *phandle)
 		/* remove connection from the list */
 		list_delete(&server->node);
 		chan_del_ref(server, &server->node_ref); /* drop list ref */
-
-		/* decrement usage count on port as pending connection
-		   is gone
-		 */
-		handle_decref(phandle);
 	}
 
 	mutex_release(&ipc_lock);
@@ -214,6 +202,9 @@ static void port_handle_destroy(handle_t *phandle)
 {
 	ASSERT(phandle);
 	ASSERT(ipc_is_port(phandle));
+
+	/* invoke port shutdown first */
+	port_shutdown(phandle);
 
 	ipc_port_t *port = containerof(phandle, ipc_port_t, handle);
 
@@ -250,7 +241,6 @@ int ipc_port_publish(handle_t *phandle)
 	} else {
 		port->state = IPC_PORT_STATE_LISTENING;
 		list_add_tail(&ipc_port_list, &port->node);
-		handle_incref(&port->handle); /* and inc usage count */
 
 		/* go through pending connection list and pick those we can handle */
 		ipc_chan_t *client, *temp;
@@ -489,29 +479,16 @@ static void chan_shutdown_locked(ipc_chan_t *chan)
 	}
 }
 
-/*
- *  Called when caller closes handle.
- */
-static void chan_shutdown(handle_t *chandle)
-{
-	DEBUG_ASSERT(chandle);
-	DEBUG_ASSERT(ipc_is_channel(chandle));
-
-	mutex_acquire(&ipc_lock);
-
-	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
-
-	chan_shutdown_locked(chan);
-
-	mutex_release(&ipc_lock);
-}
-
 static void chan_handle_destroy(handle_t *chandle)
 {
 	DEBUG_ASSERT(chandle);
 	DEBUG_ASSERT(ipc_is_channel(chandle));
 
 	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
+
+	mutex_acquire(&ipc_lock);
+	chan_shutdown_locked(chan);
+	mutex_release(&ipc_lock);
 	chan_del_ref(chan, &chan->handle_ref);
 }
 
@@ -651,9 +628,6 @@ static int port_attach_client(ipc_port_t *port, ipc_chan_t *client)
 	chan_add_ref(server, &server->node_ref);
 	list_add_tail(&port->pending_list, &server->node);
 
-	/* bump a ref to the port while there's a pending connection */
-	handle_incref(&port->handle);
-
 	/* Notify port that there is a pending connection */
 	handle_notify(&port->handle);
 
@@ -790,21 +764,21 @@ long __SYSCALL sys_connect(user_addr_t path, uint32_t flags)
 
 		if (ret < 0) {
 			/* timeout or other error */
-			handle_close(chandle);
+			handle_decref(chandle);
 			return ret;
 		}
 
 		if ((event & IPC_HANDLE_POLL_HUP) &&
 		    !(event & IPC_HANDLE_POLL_MSG)) {
 			/* hangup and no pending messages */
-			handle_close(chandle);
+			handle_decref(chandle);
 			return ERR_CHANNEL_CLOSED;
 		}
 
 		if (!(event & IPC_HANDLE_POLL_READY)) {
 			/* not connected */
 			TRACEF("Unexpected channel state: event = 0x%x\n", event);
-			handle_close(chandle);
+			handle_decref(chandle);
 			return ERR_NOT_READY;
 		}
 	}
@@ -812,7 +786,7 @@ long __SYSCALL sys_connect(user_addr_t path, uint32_t flags)
 	ret = uctx_handle_install(ctx, chandle, &handle_id);
 	if (ret != NO_ERROR) {
 		/* Failed to install handle into user context */
-		handle_close(chandle);
+		handle_decref(chandle);
 		return (long) ret;
 	}
 
@@ -867,9 +841,6 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 
 	chan_add_ref(server, &tmp_server_ref);  /* add local ref */
 	chan_del_ref(server, &server->node_ref);  /* drop list ref */
-
-	/* drop the ref to port we took in connect() */
-	handle_decref(&port->handle);
 
 	client = server->peer;
 
@@ -941,7 +912,7 @@ long __SYSCALL sys_accept(uint32_t handle_id, user_addr_t user_uuid)
 err_uuid_copy:
 	uctx_handle_remove(ctx, new_id, NULL);
 err_install:
-	handle_close(chandle);
+	handle_decref(chandle);
 err_accept:
 	handle_decref(phandle);
 	return (long) ret;
