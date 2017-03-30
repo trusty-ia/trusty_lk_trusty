@@ -80,7 +80,7 @@ copyright_header = """/*
 """
 
 intel_copyright_header = """/*
- * Copyright (c) 2015 Intel Corporation
+ * Copyright (c) 2017 Intel Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -115,7 +115,7 @@ FUNCTION(%(sys_fn)s)
     bx      lr
 """
 
-asm_x86_macro ="""
+asm_x86_macro = """
 .macro  PROLOG
     push %ebp
     mov %esp, %ebp
@@ -153,6 +153,62 @@ FUNCTION(%(sys_fn)s)
     MOV_PARAMS
     sysenter
     EPILOG
+    ret
+"""
+
+asm_x86_64_macro = """
+.macro  PROLOG
+    pushfq
+    pushq %rbp
+    pushq %rbx
+    pushq %r15
+.endm
+
+.macro  MOV_PARAMS
+   /* Return Addr and stack*/
+   leaq 1f(%rip), %rbx
+   movq %rsp, %rbp
+.endm
+
+.macro EPILOG
+1:  popq %r15
+    popq %rbx
+    popq %rbp
+    popfq
+.endm
+"""
+
+syscall_x86_64_stub = """
+FUNCTION(%(sys_fn)s)
+    PROLOG
+    movq $__NR_%(sys_fn)s, %%rax
+    MOV_PARAMS
+    sysenter
+    EPILOG
+    ret
+"""
+
+syscall_x86_64_nanosleep_stub =  """
+/*
+ * Third parameter of nanosleep is uint64_t sleep_time,
+ * while kernel level sys_nanosleep accept uint32_t sleep_time_l,
+ * and uint32_t sleep_time_h. In 64-bit TA solution, need to divide
+ * value of RDX(third parameter of nanosleep) into 2 part while
+ * invoking syscall: set value of RCX as high 32 bit value of RDX,
+ * keep RDX low 32 bit value of RDX, and zero high 32 bit of RDX.
+ */
+FUNCTION(%(sys_fn)s)
+    pushq %%rcx
+    PROLOG
+    movq %%rdx, %%rcx
+    shr $32, %%rcx
+    /* clear high 32 bit of RDX */
+    movl %%edx, %%edx
+    movq $__NR_%(sys_fn)s, %%rax
+    MOV_PARAMS
+    sysenter
+    EPILOG
+    popq %%rcx
     ret
 """
 
@@ -230,6 +286,14 @@ def parse_check_def(line):
         traceback.print_exc()
         return None
 
+def is_nanosleep_syscall(line):
+    gd = syscall_re.match(line).groupdict()
+
+    if gd['sys_fn'] == 'nanosleep':
+        return True
+    else:
+        return False
+
 
 def process_table(table_file, std_file, stubs_file, verify, arch):
     """
@@ -261,6 +325,11 @@ def process_table(table_file, std_file, stubs_file, verify, arch):
             proto_lines += syscall_proto % params
             if arch == 'x86':
                 stub_lines += syscall_x86_stub % params
+            elif arch == 'x86_64':
+                if is_nanosleep_syscall(line) is False:
+                    stub_lines += syscall_x86_64_stub % params
+                else:
+                    stub_lines += syscall_x86_64_nanosleep_stub % params
             else:
                 stub_lines += syscall_stub % params
 
@@ -279,15 +348,17 @@ def process_table(table_file, std_file, stubs_file, verify, arch):
 
     if stubs_file is not None:
         with open(stubs_file, "w") as stubs:
-            if arch == 'x86':
+            if arch == 'x86' or arch == 'x86_64':
                 stubs.writelines(intel_copyright_header + autogen_header)
             else:
-                std.writelines(copyright_header + autogen_header)
+                stubs.writelines(copyright_header + autogen_header)
             stubs.writelines(includes_header % asm_header)
             if std_file is not None:
                 stubs.writelines(includes_header % std_file)
             if arch == 'x86':
                 stubs.writelines(asm_x86_macro)
+            elif arch == 'x86_64':
+                stubs.writelines(asm_x86_64_macro)
             stubs.writelines(stub_lines)
 
 
@@ -306,7 +377,7 @@ def main():
             dest="stub_file", default=None,
             help="path to syscall assembly stubs file.")
     op.add_option("-a", "--arch", type="string",
-            dest="arch", default="x86",
+            dest="arch", default="arm",
             help="arch of stub assembly files")
 
     (opts, args) = op.parse_args()
