@@ -67,7 +67,7 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 	}
 
 	if (new_ut) {
-		pgd = kvaddr_to_paddr(new_ut->page_table);
+		pgd = vaddr_to_paddr(new_ut->page_table);
 		arm_write_contextidr(new_ut->arch.asid);
 		ISB;
 		arm_write_ttbr0(pgd | MMU_TTBRx_FLAGS);

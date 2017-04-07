@@ -37,13 +37,23 @@
 static void arm_uthread_mmu_init(uint level)
 {
 	uint32_t cur_ttbr0;
+	uint32_t cur_ttbr1;
+	uint32_t cur_ttbcr;
 
 	ASSERT(MEMBASE > MAX_USR_VA);
 
 	cur_ttbr0 = arm_read_ttbr0();
+	cur_ttbr1 = arm_read_ttbr1();
+	cur_ttbcr = arm_read_ttbcr();
 
-	/* push out kernel mappings to ttbr1 */
-	arm_write_ttbr1(cur_ttbr0);
+	dprintf(CRITICAL, "%s: ttbr0 0x%x, ttbr1 0x%x, cur_ttbcr 0x%x\n",
+		__func__, cur_ttbr0, cur_ttbr1, cur_ttbcr);
+
+	/* push out kernel mappings to ttbr1/0 */
+	if (cur_ttbcr & 0x7)
+		arm_write_ttbr0(cur_ttbr1); /* currently using cur_ttbr1 */
+	else
+		arm_write_ttbr1(cur_ttbr0);
 
 	/* setup a user-kernel split */
 	arm_write_ttbcr(MMU_MEMORY_TTBCR_N);
@@ -52,7 +62,7 @@ static void arm_uthread_mmu_init(uint level)
 }
 
 LK_INIT_HOOK_FLAGS(libuthreadarmmmu, arm_uthread_mmu_init,
-                   LK_INIT_LEVEL_ARCH_EARLY, LK_INIT_FLAG_ALL_CPUS);
+                   LK_INIT_LEVEL_ARCH, LK_INIT_FLAG_ALL_CPUS);
 
 static u_int *arm_uthread_mmu_alloc_pgtbl(pgtbl_lvl_t type)
 {
@@ -115,7 +125,7 @@ status_t arm_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
 		}
 
 		/* install in level_1 */
-		page_table[idx] = kvaddr_to_paddr(level_2);
+		page_table[idx] = vaddr_to_paddr(level_2);
 		page_table[idx] |= ((MMU_MEMORY_DOMAIN_MEM << 5) | l1_flags | 0x1);
 	} else {
 		level_2 = paddr_to_kvaddr(level_2_paddr);
