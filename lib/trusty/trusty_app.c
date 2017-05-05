@@ -64,12 +64,7 @@ typedef struct trusty_app_manifest {
 } trusty_app_manifest_t;
 
 #define MAX_TRUSTY_APP_COUNT	(PAGE_SIZE / sizeof(trusty_app_t))
-
-#define TRUSTY_APP_START_ADDR	0x8000
-//#define TRUSTY_APP_STACK_TOP	0x1000000 /* 16MB */
-/*temporary change on x86. Required because of zero based kernel. Should be fixed. */
-#define TRUSTY_APP_STACK_TOP	0x90000000
-
+#define TRUSTY_APP_STACK_TOP	0x1000000 /* 16MB */
 #define PAGE_MASK		(PAGE_SIZE - 1)
 
 static u_int trusty_app_count;
@@ -272,8 +267,6 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 	vaddr_t start_data = 0;
 	vaddr_t end_code = 0;
 	vaddr_t end_data = 0;
-	vaddr_t mmio_vaddr;
-	paddr_t mmio_paddr;
 
 	trusty_app_image = trusty_app->app_img;
 	trusty_app_idx = trusty_app - trusty_app_list;
@@ -295,11 +288,6 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 #endif
 
 		if (prg_hdr->p_type != PT_LOAD)
-			continue;
-
-		/* skip PT_LOAD if it's below trusty_app start or above .bss */
-		if ((prg_hdr->p_vaddr < TRUSTY_APP_START_ADDR) ||
-		    (prg_hdr->p_vaddr >= trusty_app->end_bss))
 			continue;
 
 		/*
@@ -371,18 +359,6 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 			       size - prg_hdr->p_memsz);
 		}
 	}
-
-	/* add the mmio map for each app */
-#if PRINT_USE_MMIO
-	mmio_vaddr = mmio_paddr = g_mmio_base_addr;
-	ret = uthread_map_contig(trusty_app->ut, &mmio_vaddr, mmio_paddr, 4096,
-			 UTM_W | UTM_R | UTM_FIXED | UTM_IO, UT_MAP_ALIGN_4KB);
-	if (ret) {
-		dprintf(INFO, "cannot map the mmio\n");
-		return ret;
-	}
-#endif
-
 
 	ret = init_brk(trusty_app);
 	if (ret != NO_ERROR) {

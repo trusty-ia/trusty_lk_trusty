@@ -145,7 +145,7 @@ static long sm_queue_stdcall(smc32_args_t *args)
 
 	spin_lock(&stdcallstate.lock);
 
-	if (stdcallstate.event.signalled || stdcallstate.done) {
+	if (stdcallstate.event.signaled || stdcallstate.done) {
 		if (args->smc_nr == SMC_SC_RESTART_LAST && stdcallstate.active_cpu == -1) {
 			stdcallstate.restart_count++;
 			LTRACEF_LEVEL(3, "cpu %d, restart std call, restart_count %d\n",
@@ -355,7 +355,8 @@ static void sm_secondary_init(uint level)
 	if (!nsirqthreads[cpu]) {
 		panic("failed to create irq NS switcher thread for cpu %d!\n", cpu);
 	}
-	nsirqthreads[cpu]->pinned_cpu = cpu;
+
+	thread_set_pinned_cpu(nsirqthreads[cpu], cpu);
 	thread_set_real_time(nsirqthreads[cpu]);
 
 	snprintf(name, sizeof(name), "idle-ns-switch-%d", cpu);
@@ -365,7 +366,7 @@ static void sm_secondary_init(uint level)
 	if (!nsidlethreads[cpu]) {
 		panic("failed to create idle NS switcher thread for cpu %d!\n", cpu);
 	}
-	nsidlethreads[cpu]->pinned_cpu = cpu;
+	thread_set_pinned_cpu(nsidlethreads[cpu], cpu);
 	thread_set_real_time(nsidlethreads[cpu]);
 
 	if (ns_threads_started) {

@@ -31,6 +31,7 @@
 #include <err.h>
 #include <trace.h>
 #include <kernel/mutex.h>
+#include <kernel/vm.h>
 #include <lib/sm.h>
 #include <lib/sm/smcall.h>
 #include <lib/sm/sm_err.h>
@@ -143,7 +144,7 @@ static long smc_get_version_str(smc32_args_t *args)
 	if ((size_t)index >= version_len)
 		return SM_ERR_INVALID_PARAMETERS;
 
-	return lk_version[index];
+	return vaddr_to_paddr(lk_version[index]);
 }
 #endif
 

@@ -23,7 +23,14 @@
 
 CUR_DIR := $(GET_LOCAL_DIR)
 
+ifeq ($(SUBARCH),x86-32)
+SUBARCH_DIR := $(CUR_DIR)/32
+endif
+ifeq ($(SUBARCH),x86-64)
+SUBARCH_DIR := $(CUR_DIR)/64
+endif
+
 MODULE_SRCS += \
-	$(CUR_DIR)/syscall.S
+	$(SUBARCH_DIR)/syscall.S
 
 CUR_DIR :=

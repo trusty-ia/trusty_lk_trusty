@@ -33,7 +33,8 @@
 
 #define PAGE_MASK   (PAGE_SIZE - 1)
 
-extern uint32_t __tss_start;
+extern uint64_t __tss_start;
+extern uint64_t __tss_end;
 extern void x86_syscall();
 static uint64_t syscall_stack;
 volatile uint64_t *current_stack;
@@ -48,7 +49,7 @@ static void set_tss_segment()
 {
     /* Get system tss segment */
     tss_t *system_tss = get_system_selector(TSS_SELECTOR);
-    syscall_stack = __tss_start;
+    syscall_stack = &__tss_end;
     system_tss->rsp0 = syscall_stack;
 }
 
@@ -81,9 +82,15 @@ void arch_uthread_startup(void)
     register uint64_t data_seg = USER_DATA_64_SELECTOR | USER_DPL;
     register uint64_t usr_flags = USER_EFLAGS;
 
-    arch_mmu_query(sp_usr, &paddr, &flags);
+    vmm_aspace_t *aspace = vaddr_to_aspace(sp_usr);
+
+    if (!aspace)
+        return;
+
+    arch_mmu_query(&aspace->arch_aspace, sp_usr, &paddr, &flags);
     if(paddr)
-        *(uint32_t *)paddr = 0x0;
+        *(uint32_t *)sp_usr = 0x0;
+
     __asm__ __volatile__ (
             "pushq %0   \n\t"
             "pushq %1   \n\t"
@@ -108,17 +115,14 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
      * In the given scheme, eip and esp changes happen on external/lk.
      * User space specific changes happen here. Which includes tss and gs
      */
-    if (old_ut) {
-    }
     if (new_ut) {
         /* userspace thread */
         tss_t *system_tss = get_system_selector(TSS_SELECTOR);
         current_stack = new_ut->arch.kstack;
         system_tss->rsp0 = current_stack;
         /* setting gs for system call stack */
-        x86_set_cr3(new_ut->page_table);
-    }
-    else {
+        x86_set_cr3(vaddr_to_paddr(new_ut->page_table));
+    } else {
         tss_t *system_tss = get_system_selector(TSS_SELECTOR);
         current_stack = syscall_stack;
         system_tss->rsp0 = current_stack;
@@ -154,7 +158,6 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
     addr_t vaddr, paddr;
     u_int pg, flags;
     status_t err = NO_ERROR;
-    static addr_t app_page_table =0;
 
     if (mp->size > MAX_USR_VA || mp->vaddr > (MAX_USR_VA - mp->size)) {
         err = ERR_INVALID_ARGS;
@@ -192,9 +195,6 @@ status_t arch_uthread_map(struct uthread *ut, struct uthread_map *mp)
         err = x86_uthread_mmu_map(ut, paddr, vaddr, flags);
         if (err)
             goto err_undo_maps;
-    }
-    if(!app_page_table){
-        app_page_table = ut->page_table;
     }
     return NO_ERROR;
 err_undo_maps:
@@ -268,6 +268,7 @@ bool arch_uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size)
 
 status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len)
 {
+
     if (len == 0)
         return NO_ERROR;
 
@@ -277,13 +278,17 @@ status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len)
     /* TODO: be smarter about handling invalid addresses... */
     if (!arch_uthread_is_valid_range(uthread_get_current(), (vaddr_t)usrc, len))
         return ERR_FAULT;
-    memcpy(kdest, (void *)usrc, len);
-    return NO_ERROR;
 
+    __asm__ volatile("stac");
+    memcpy(kdest, (void *)usrc, len);
+    __asm__ volatile("clac");
+
+    return NO_ERROR;
 }
 
 status_t arch_copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
 {
+
     if (len == 0)
         return NO_ERROR;
 
@@ -293,26 +298,38 @@ status_t arch_copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
     /* TODO: be smarter about handling invalid addresses... */
     if (!arch_uthread_is_valid_range(uthread_get_current(), (vaddr_t)udest, len))
         return ERR_FAULT;
+
+    __asm__ volatile("stac");
     memcpy((void *)udest, ksrc, len);
+    __asm__ volatile("clac");
+
     return NO_ERROR;
 }
 
 ssize_t arch_strlcpy_from_user(char *kdst, user_addr_t usrc, size_t len)
 {
+    size_t usrc_len;
+    char  *ksrc;
     uthread_map_t *mp;
     uthread_t *ut = uthread_get_current();
+
+
     x86_mmap_lock(ut);
     mp = arch_uthread_map_find (ut, usrc, 0);
     x86_mmap_unlock(ut);
     if (!mp) {
         return (ssize_t) ERR_FAULT;
     }
+
     /* TOOO: check mapping attributes */
-    size_t usrc_len = mp->size - (usrc - mp->vaddr);
-    char  *ksrc = (char*) usrc;
+    usrc_len = mp->size - (usrc - mp->vaddr);
+    ksrc = (char*) usrc;
+
+    __asm__ volatile("stac");
     while (len--) {
         if (usrc_len-- == 0) {
             /* end of segment reached */
+            __asm__ volatile("clac");
             return (ssize_t) ERR_FAULT;
         }
         if (*ksrc == '\0') {
@@ -321,5 +338,8 @@ ssize_t arch_strlcpy_from_user(char *kdst, user_addr_t usrc, size_t len)
         }
         *kdst++ = *ksrc++;
     }
+
+    __asm__ volatile("clac");
+
     return (ssize_t) (ksrc - (char *)usrc);
 }

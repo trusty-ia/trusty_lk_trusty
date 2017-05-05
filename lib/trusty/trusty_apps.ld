@@ -23,13 +23,13 @@
 
 /* should be included in all lk linker scripts in the .data segment */
 SECTIONS {
-.__trusty_app : {
-/* pre-built secure apps get inserted here */
-. = ALIGN(0x1000);
-__trusty_app_start = .;
-KEEP(*(.task.*))
-__trusty_app_end = .;
-. = ALIGN(0x1000);
-}
+ 	. = ALIGN(4096);
+	.__trusty_app : ALIGN(4096){
+		/* pre-built secure apps get inserted here */
+        . = ALIGN(8);
+		__trusty_app_start = .;
+		KEEP(*(.task.*))
+		__trusty_app_end = .;
+	}
 }
 INSERT AFTER .data;

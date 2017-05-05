@@ -85,11 +85,14 @@ static bool valid_address(vaddr_t addr, u_int size)
 /* handle stdout/stderr */
 static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size)
 {
+	uint8_t kbuf[size];
 	/* check buffer is in task's address space */
 	if (!valid_address((vaddr_t)user_ptr, size))
 		return ERR_INVALID_ARGS;
 
-	dwrite((fd == 2) ? INFO : SPEW, (const void *)(uintptr_t)user_ptr, size);
+	copy_from_user(kbuf, user_ptr, size);
+
+	dwrite((fd == 2) ? INFO : SPEW, (const void *)(uintptr_t)kbuf, size);
 	return size;
 }
 
@@ -294,19 +297,18 @@ long sys_get_device_info(user_addr_t * info, bool need_seed)
 	if (need_seed && !valid_ta_to_retrieve_seed())
 		panic("the caller is invalid!\n");
 
-	if (!info || !g_trusty_startup_info)
-		panic("the params is NULL!\n");
+        if (!info)
+                panic("the params is NULL!\n");
 
-	if (g_trusty_startup_info->size_of_this_struct != sizeof(trusty_startup_info_t))
+	if(g_trusty_startup_info.size_of_this_struct != sizeof(trusty_startup_info_t))
 		panic("trusty_startup_info_t size mismatch!\n");
 
 	/* make sure the shared structure are same in tos loader, LK kernel */
-	if (((trusty_device_info_t *)g_trusty_startup_info->trusty_mem_base)->size
-			!= sizeof(trusty_device_info_t))
+	if(g_dev_info->size != sizeof(trusty_device_info_t))
 		panic("trusty_device_info_t size mismatch!\n");
 
 	/* memcpy may result to klocwork scan error, so size is checked before memcpy is called. */
-	memcpy(&dev_info, g_trusty_startup_info->trusty_mem_base, sizeof(trusty_device_info_t));
+	memcpy(&dev_info, g_dev_info, sizeof(trusty_device_info_t));
 
 	/* for Km1.0 no need the osVersion and patchMonthYear */
 	dev_info.rot.osVersion = 0;

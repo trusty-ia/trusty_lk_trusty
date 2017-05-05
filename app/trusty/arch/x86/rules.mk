@@ -30,8 +30,15 @@ XBIN_LDFLAGS += \
 # linking script to link this user task
 USER_TASK_LINKER_SCRIPT := $(BUILDDIR)/user_task.ld
 
+ifeq ($(SUBARCH),x86-32)
+SUBARCH_DIR := $(LOCAL_DIR)/32
+endif
+ifeq ($(SUBARCH),x86-64)
+SUBARCH_DIR := $(LOCAL_DIR)/64
+endif
+
 # rule to copy it to BUILD directory
-$(USER_TASK_LINKER_SCRIPT): $(LOCAL_DIR)/user_task-trusty.ld
+$(USER_TASK_LINKER_SCRIPT): $(SUBARCH_DIR)/user_task-trusty.ld
 	@echo generating $@
 	@$(MKDIR)
 	$(NOECHO)cp $< $@

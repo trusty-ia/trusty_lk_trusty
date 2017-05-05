@@ -23,7 +23,10 @@ ENTRY(_start)
 SECTIONS
 {
   /* Read-only sections, merged into text segment: */
-  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0x80000000)); . = SEGMENT_START("text-segment", 0x80000000);
+  PROVIDE (__executable_start = SEGMENT_START("text-segment", 0x00000000));
+
+  . = SEGMENT_START("text-segment", 0x00000000);
+
   .interp         : { *(.interp) }
   .note.gnu.build-id : { *(.note.gnu.build-id) }
   .hash           : { *(.hash) }

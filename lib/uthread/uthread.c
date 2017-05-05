@@ -314,6 +314,8 @@ uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
 	if (!ut->thread)
 		goto err_free_ut_maps;
 
+	vmm_create_aspace(&ut->thread->aspace, name, 0);
+
 	err = arch_uthread_create(ut);
 	if (err)
 		goto err_free_ut_maps;

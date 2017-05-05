@@ -26,8 +26,16 @@ CUR_DIR := $(GET_LOCAL_DIR)
 GLOBAL_INCLUDES += \
 		$(CUR_DIR)/include \
 
+ifeq ($(SUBARCH),x86-32)
+SUBARCH_DIR := $(CUR_DIR)/32
+endif
+
+ifeq ($(SUBARCH),x86-64)
+SUBARCH_DIR := $(CUR_DIR)/64
+endif
+
 MODULE_ARM_OVERRIDE_SRCS += \
-	$(CUR_DIR)/uthread.c \
-	$(CUR_DIR)/uthread_mmu.c \
+	$(SUBARCH_DIR)/uthread.c \
+	$(SUBARCH_DIR)/uthread_mmu.c \
 
 CUR_DIR :=

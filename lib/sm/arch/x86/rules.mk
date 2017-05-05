@@ -21,8 +21,8 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+ifeq ($(SUBARCH),x86-64)
 CUR_DIR := $(GET_LOCAL_DIR)
-
 
 ifneq (,$(findstring WITH_LIB_SM_MONITOR=1,$(GLOBAL_DEFINES)))
 ifeq ($(TARGET), pc-x86) || ($(TARGET), generic-x86 || ($(TARGET), generic-x86-64))
@@ -37,3 +37,4 @@ MODULE_CFLAGS += -DWITH_LIB_DYNAMIC_TIMER=1
 endif
 
 CUR_DIR :=
+endif

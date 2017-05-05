@@ -35,7 +35,7 @@ define user-task-build-rule
 $(eval XBIN_NAME := $(notdir $(1)))\
 $(eval XBIN_TOP_MODULE := $(1))\
 $(eval XBIN_TYPE := USER_TASK)\
-$(eval XBIN_ARCH := $(TRUSTY_USER_ARCH))\
+$(eval XBIN_ARCH := $(ARCH))\
 $(eval XBIN_BUILDDIR := $(BUILDDIR)/user_tasks/$(1))\
 $(eval XBIN_LINKER_SCRIPT := $(XBIN_BUILDDIR)/user_task.ld)\
 $(eval XBIN_LDFLAGS := )\
