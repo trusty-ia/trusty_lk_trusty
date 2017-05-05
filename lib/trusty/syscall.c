@@ -288,8 +288,8 @@ static bool valid_ta_to_retrieve_seed()
  */
 long sys_get_device_info(user_addr_t * info, bool need_seed)
 {
-	long    ret = 0;
-	trusty_device_info_t *   dev_info = NULL;
+	long ret = 0;
+	trusty_device_info_t dev_info;
 
 	if (need_seed && !valid_ta_to_retrieve_seed())
 		panic("the caller is invalid!\n");
@@ -297,26 +297,30 @@ long sys_get_device_info(user_addr_t * info, bool need_seed)
 	if (!info || !g_trusty_startup_info)
 		panic("the params is NULL!\n");
 
-	if(g_trusty_startup_info->size_of_this_struct != sizeof(trusty_startup_info_t))
+	if (g_trusty_startup_info->size_of_this_struct != sizeof(trusty_startup_info_t))
 		panic("trusty_startup_info_t size mismatch!\n");
 
-	dev_info = (trusty_device_info_t *)g_trusty_startup_info->trusty_mem_base;
-
 	/* make sure the shared structure are same in tos loader, LK kernel */
-	if(dev_info->size != sizeof(trusty_device_info_t))
+	if (((trusty_device_info_t *)g_trusty_startup_info->trusty_mem_base)->size
+			!= sizeof(trusty_device_info_t))
 		panic("trusty_device_info_t size mismatch!\n");
 
+	/* memcpy may result to klocwork scan error, so size is checked before memcpy is called. */
+	memcpy(&dev_info, g_trusty_startup_info->trusty_mem_base, sizeof(trusty_device_info_t));
+
 	/* for Km1.0 no need the osVersion and patchMonthYear */
-	dev_info->rot.osVersion = 0;
-	dev_info->rot.patchMonthYear = 0;
+	dev_info.rot.osVersion = 0;
+	dev_info.rot.patchMonthYear = 0;
 
-	if(!need_seed)
+	if (!need_seed)
 		/* seed is the sensitive secret date, do not return to user app if it is not required. */
-		memset(dev_info->seed, 0, sizeof(dev_info->seed));
+		memset(dev_info.seed, 0, sizeof(dev_info.seed));
 
-	dev_info->state.data = 0; /* todo: check if glv uses PCI_READ_FUSE(HECI1); */
+	dev_info.state.data = 0;
 
-	ret = copy_to_user(info, dev_info, sizeof(trusty_device_info_t));
+	ret = copy_to_user(info, &dev_info, sizeof(trusty_device_info_t));
+	memset(&dev_info, 0, sizeof(dev_info));
+
 	if (ret != NO_ERROR)
 		panic("failed (%d) to copy structure to user\n", ret);
 
