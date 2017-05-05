@@ -39,3 +39,4 @@ MODULE_ARM_OVERRIDE_SRCS += \
 	$(SUBARCH_DIR)/uthread_mmu.c \
 
 CUR_DIR :=
+SUBARCH_DIR :=

@@ -27,7 +27,7 @@
 
 FUNCTION (x86_syscall)
     #copy stack from uthread
-    leaq current_stack(%rip), %r15
+    movq $current_stack, %r15
     movq (%r15), %rsp
     sti
     pushq %rbx /* Ring 3 return address */
@@ -58,7 +58,7 @@ FUNCTION (x86_syscall)
     /* Result is stored in rax. Before multiplication rax contains syscall No */
 
     mul %r15
-    leaq syscall_table(%rip), %r14
+    movq $syscall_table, %r14
     add %r14, %rax
     movq %r9,%rdx
     call (%rax)
@@ -80,5 +80,4 @@ FUNCTION (x86_syscall)
 
     popq %rcx /* pop esp */
     popq %rdx /* pop eip */
-    .byte 72
-    sysexit
+    rex.W sysexit

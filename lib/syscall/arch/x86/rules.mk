@@ -34,3 +34,4 @@ MODULE_SRCS += \
 	$(SUBARCH_DIR)/syscall.S
 
 CUR_DIR :=
+SUBARCH_DIR :=
