@@ -373,6 +373,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 	}
 
 	/* add the mmio map for each app */
+#if PRINT_USE_MMIO
 	mmio_vaddr = mmio_paddr = g_mmio_base_addr;
 	ret = uthread_map_contig(trusty_app->ut, &mmio_vaddr, mmio_paddr, 4096,
 			 UTM_W | UTM_R | UTM_FIXED | UTM_IO, UT_MAP_ALIGN_4KB);
@@ -380,6 +381,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 		dprintf(INFO, "cannot map the mmio\n");
 		return ret;
 	}
+#endif
 
 
 	ret = init_brk(trusty_app);
