@@ -144,7 +144,7 @@ static long smc_get_version_str(smc32_args_t *args)
 	if ((size_t)index >= version_len)
 		return SM_ERR_INVALID_PARAMETERS;
 
-	return vaddr_to_paddr(lk_version[index]);
+	return lk_version[index];
 }
 #endif
 
