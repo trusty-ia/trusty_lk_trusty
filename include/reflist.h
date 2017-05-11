@@ -78,4 +78,17 @@ bool obj_del_ref(obj_t *obj, obj_ref_t *ref, obj_destroy_func destroy)
 	return dead;
 }
 
+static inline __ALWAYS_INLINE
+void obj_ref_transfer(obj_ref_t *dst, obj_ref_t *src)
+{
+	struct list_node *prev;
+
+	assert(!list_in_list(&dst->ref_node));
+	assert(list_in_list(&src->ref_node));
+
+	prev = src->ref_node.prev;
+	list_delete(&src->ref_node);
+	list_add_after(prev, &dst->ref_node);
+}
+
 #endif
