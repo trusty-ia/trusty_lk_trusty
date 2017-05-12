@@ -23,6 +23,8 @@
 
 LOCAL_DIR := $(GET_LOCAL_DIR)
 
+MODULE := $(LOCAL_DIR)
+
 # some linkers set the default arm pagesize to 32K. No idea why.
 XBIN_LDFLAGS += \
 	-z max-page-size=0x1000
@@ -42,6 +44,12 @@ $(USER_TASK_LINKER_SCRIPT): $(SUBARCH_DIR)/user_task-trusty.ld
 	@echo generating $@
 	@$(MKDIR)
 	$(NOECHO)cp $< $@
+
+ifeq (true,$(call TOBOOL,$(STACK_PROTECTOR)))
+MODULE_SRCS += \
+	$(LOCAL_DIR)/stack_chk.c
+include make/module.mk
+endif
 
 GENERATED +=  $(USER_TASK_LINKER_SCRIPT)
 
