@@ -552,6 +552,25 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 	return ERR_NOT_FOUND;
 }
 
+void duplicated_uuid_filter()
+{
+	int i, j;
+	trusty_app_t *ta = trusty_app_list;
+	trusty_app_t *ta_cmp = ta + 1;
+
+	for (i = 0; i < trusty_app_count; i++) {
+		for (j = i + 1; j < trusty_app_count; j++) {
+			if(!memcmp(&ta->props.uuid, &ta_cmp->props.uuid, sizeof(uuid_t))) {
+				dprintf(SPEW, "The duplicated uuid:\n");
+				PRINT_TRUSTY_APP_UUID(ta - trusty_app_list, &ta->props.uuid);
+				panic("Error: found the duplicated uuid.\n");
+			}
+			ta_cmp++;
+		}
+		ta++;
+	}
+}
+
 void trusty_app_init(void)
 {
 	trusty_app_t *trusty_app;
@@ -566,6 +585,13 @@ void trusty_app_init(void)
 	finalize_registration();
 
 	trusty_app_bootloader();
+
+	/*
+	 * Check if there's duplicate UUID in the trusty app list, if it has, it will
+	 * trigger a panic for trusty boot. This is because UUID has security key
+	 * binding implications in Trusty.
+	 */
+	duplicated_uuid_filter();
 
 	for (i = 0, trusty_app = trusty_app_list; i < trusty_app_count; i++, trusty_app++) {
 		char name[32];
