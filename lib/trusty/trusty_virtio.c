@@ -36,6 +36,7 @@
 
 #include <remoteproc/remoteproc.h>
 #include "trusty_virtio.h"
+#include <platform/vmcall.h>
 
 #define LOCAL_TRACE  0
 
@@ -74,6 +75,8 @@ static struct trusty_virtio_bus _virtio_bus = {
 static status_t map_descr(ns_paddr_t buf_pa, void **buf_va, ns_size_t sz,
                           uint buf_mmu_flags)
 {
+	status_t err;
+
 	if (!buf_pa) {
 		LTRACEF("invalid descr addr 0x%llx\n", buf_pa);
 		return ERR_INVALID_ARGS;
@@ -92,14 +95,25 @@ static status_t map_descr(ns_paddr_t buf_pa, void **buf_va, ns_size_t sz,
 #endif
 
 	/* map resource table into our address space */
-	return  vmm_alloc_physical(vmm_get_kernel_aspace(), "virtio",
+	err =  vmm_alloc_physical(vmm_get_kernel_aspace(), "virtio",
 	                           ROUNDUP(sz, PAGE_SIZE),
 	                           buf_va, PAGE_SIZE_SHIFT,
 	                           (paddr_t) buf_pa, 0, buf_mmu_flags);
+
+#ifdef EPT_DEBUG
+	if (!err)
+		make_ept_update_vmcall(ADD, buf_pa, sz);
+#endif
+
+	return err;
 }
 
 static status_t unmap_descr(ns_paddr_t pa, void *va, size_t sz)
 {
+#ifdef EPT_DEBUG
+	make_ept_update_vmcall(REMOVE, pa, sz);
+#endif
+
 	return vmm_free_region(vmm_get_kernel_aspace(), (vaddr_t)va);
 }
 

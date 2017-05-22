@@ -36,6 +36,7 @@
 #include <pow2.h>
 #include <list.h>
 #include "trusty-log.h"
+#include <platform/vmcall.h>
 
 #define LOG_LOCK_FLAGS SPIN_LOCK_FLAG_IRQ_FIQ
 
@@ -141,6 +142,11 @@ static status_t map_rb(paddr_t pa, size_t sz, vaddr_t *va)
 	if (err) {
 		return err;
 	}
+
+#ifdef EPT_DEBUG
+	make_ept_update_vmcall(ADD, pa, sz);
+#endif
+
 	*va += offset;
 	return err;
 }
@@ -217,6 +223,11 @@ long memlog_rm(paddr_t pa)
 	unregister_print_callback(&log->cb);
 	list_delete(&log->entry);
 	result = vmm_free_region(vmm_get_kernel_aspace(), (vaddr_t)log->rb);
+
+#ifdef EPT_DEBUG
+	make_ept_update_vmcall(REMOVE, pa, log->buf_sz);
+#endif
+
 	free(log);
 	if (result != NO_ERROR) {
 		return SM_ERR_INTERNAL_FAILURE;

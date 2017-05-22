@@ -36,6 +36,7 @@
 
 #include <virtio/virtio_ring.h>
 #include "vqueue.h"
+#include <platform/vmcall.h>
 
 #define LOCAL_TRACE 0
 
@@ -62,6 +63,10 @@ int vqueue_init(struct vqueue *vq, uint32_t id,
 		return (int) ret;
 	}
 
+#ifdef EPT_DEBUG
+	make_ept_update_vmcall(ADD, paddr, vq->vring_sz);
+#endif
+
 	vring_init(&vq->vring, num, vptr, align);
 
 	vq->id = id;
@@ -82,6 +87,12 @@ void vqueue_destroy(struct vqueue *vq)
 
 	DEBUG_ASSERT(vq);
 
+#ifdef EPT_DEBUG
+	uint64_t pa, size;
+	pa = vaddr_to_paddr(vq->vring_addr);
+	size = vq->vring_sz;
+#endif
+
 	spin_lock_save(&vq->slock, &state, VQ_LOCK_FLAGS);
 	vring_addr = vq->vring_addr;
 	vq->vring_addr = (vaddr_t)NULL;
@@ -89,6 +100,10 @@ void vqueue_destroy(struct vqueue *vq)
 	spin_unlock_restore(&vq->slock, state, VQ_LOCK_FLAGS);
 
 	vmm_free_region(vmm_get_kernel_aspace(), vring_addr);
+
+#ifdef EPT_DEBUG
+	make_ept_update_vmcall(REMOVE, pa, size);
+#endif
 }
 
 void vqueue_signal_avail(struct vqueue *vq)
@@ -225,6 +240,10 @@ int vqueue_map_iovs(struct vqueue_iovs *vqiovs, u_int flags)
 		                         vqiovs->phys[i], 0, flags);
 		if (ret)
 			goto err;
+
+#ifdef EPT_DEBUG
+		make_ept_update_vmcall(ADD, vqiovs->phys[i], vqiovs->iovs[i].len);
+#endif
 	}
 
 	return NO_ERROR;
@@ -233,6 +252,9 @@ err:
 	while (i--) {
 		vmm_free_region(vmm_get_kernel_aspace(),
 		                (vaddr_t)vqiovs->iovs[i].base);
+#ifdef EPT_DEBUG
+		make_ept_update_vmcall(REMOVE, vqiovs->phys[i], vqiovs->iovs[i].len);
+#endif
 		vqiovs->iovs[i].base = NULL;
 	}
 	return ret;
@@ -250,6 +272,9 @@ void vqueue_unmap_iovs(struct vqueue_iovs *vqiovs)
 		DEBUG_ASSERT(vqiovs->iovs[i].base);
 		vmm_free_region(vmm_get_kernel_aspace(),
 		                (vaddr_t)vqiovs->iovs[i].base);
+#ifdef EPT_DEBUG
+		make_ept_update_vmcall(REMOVE, vqiovs->phys[i], vqiovs->iovs[i].len);
+#endif
 		vqiovs->iovs[i].base = NULL;
 	}
 }
