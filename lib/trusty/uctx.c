@@ -59,10 +59,12 @@ struct uctx {
 };
 
 static status_t _uctx_startup(trusty_app_t *app);
+static status_t _uctx_shutdown(trusty_app_t *app);
 
 static uint _uctx_slot_id;
 static struct trusty_app_notifier _uctx_notifier = {
 	.startup = _uctx_startup,
+	.shutdown = _uctx_shutdown,
 };
 
 static status_t _uctx_startup(trusty_app_t *app)
@@ -74,6 +76,15 @@ static status_t _uctx_startup(trusty_app_t *app)
 		return err;
 
 	trusty_als_set(app, _uctx_slot_id, uctx);
+	return NO_ERROR;
+}
+
+static status_t _uctx_shutdown(trusty_app_t *app)
+{
+	LTRACEF("Destroying uctx for app:%d\n", app->app_id);
+	uctx_t *uctx;
+	uctx = trusty_als_get(app, _uctx_slot_id);
+	uctx_destroy(uctx);
 	return NO_ERROR;
 }
 
@@ -180,7 +191,7 @@ void uctx_destroy(uctx_t *ctx)
 
 	for (i = 0; i < IPC_MAX_HANDLES; i++) {
 		if (ctx->handles[i]) {
-			TRACEF("destroying a non-empty uctx!!!\n");
+			LTRACEF("destroying a non-empty uctx!!!\n");
 			handle_list_del(&ctx->handle_list, ctx->handles[i]);
 			handle_close(ctx->handles[i]);
 			ctx->handles[i] = NULL;
