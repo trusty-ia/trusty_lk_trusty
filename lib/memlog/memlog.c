@@ -126,7 +126,7 @@ static void memlog_write(struct memlog *log, const char *str, size_t len)
 
 static status_t map_rb(paddr_t pa, size_t sz, vaddr_t *va)
 {
-	size_t mb = 1 << 20;
+	size_t mb = 1 << 12;
 	size_t offset;
 	status_t err;
 	unsigned flags = ARCH_MMU_FLAG_CACHED |
