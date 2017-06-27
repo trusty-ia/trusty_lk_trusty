@@ -134,11 +134,11 @@ long sys_brk(u_int brk)
 	return (long) trusty_app->cur_brk;
 }
 
-long sys_exit_group(void)
+long sys_exit_etc(int32_t status, uint32_t flags)
 {
 	thread_t *current = get_current_thread();
 	LTRACEF("exit called, thread %p, name %s\n", current, current->name);
-	trusty_app_exit(0);
+	trusty_app_exit(status);
 	return 0L;
 }
 
