@@ -148,18 +148,6 @@ static long smc_get_version_str(smc32_args_t *args)
 }
 #endif
 
-#if __x86_64__
-#define PERIODIC_TIMER_INTERVAL 0x10
-static long smc_sm_timer_mode(smc32_args_t *args)
-{
-#if !WITH_LIB_DYNAMIC_TIMER
-	return (0x80000000 | PERIODIC_TIMER_INTERVAL);
-#else
-	return 0;
-#endif
-}
-#endif
-
 smc32_handler_t sm_fastcall_function_table[] = {
 	[SMC_FUNCTION(SMC_FC_REQUEST_FIQ)] = smc_intc_request_fiq,
 	[SMC_FUNCTION(SMC_FC_FIQ_EXIT)] = smc_fiq_exit,
@@ -173,10 +161,6 @@ smc32_handler_t sm_fastcall_function_table[] = {
 	[SMC_FUNCTION(SMC_FC_GET_VERSION_STR)] = smc_get_version_str,
 #endif
 	[SMC_FUNCTION(SMC_FC_API_VERSION)] = smc_sm_api_version,
-
-#if __x86_64__
-	[SMC_FUNCTION(SMC_FC_TIMER_MODE)] = smc_sm_timer_mode,
-#endif
 };
 
 uint32_t sm_nr_fastcall_functions = countof(sm_fastcall_function_table);
