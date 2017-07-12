@@ -70,10 +70,96 @@ void arch_uthread_init()
     setup_syscall();
 }
 
+static bool elf64_update_rela_section(uint16_t e_type, uint64_t relocation_offset,
+    Elf64_Dyn *dyn_section, uint64_t dyn_section_sz)
+{
+    Elf64_Rela *rela = NULL;
+    uint64_t rela_sz = 0;
+    uint64_t rela_entsz = 0;
+    Elf64_Sym *symtab = NULL;
+    uint64_t symtab_entsz = 0;
+    uint64_t i;
+    uint64_t d_tag = 0;
+
+    if (!dyn_section){
+        dprintf(0, "failed to read dynamic section from file\n");
+        return false;
+    }
+
+    /* locate rela address, size, entry size */
+    for (i = 0; i < dyn_section_sz / sizeof(Elf64_Dyn); ++i) {
+        d_tag = dyn_section[i].d_tag;
+
+        if (DT_RELA == d_tag) {
+            rela = (Elf64_Rela *)(uint64_t)(dyn_section[i].d_un.d_ptr +
+                    relocation_offset);
+        } else if ((DT_RELASZ == d_tag) || (DT_RELSZ == d_tag)) {
+            rela_sz = dyn_section[i].d_un.d_val;
+        } else if (DT_RELAENT == d_tag) {
+            rela_entsz = dyn_section[i].d_un.d_val;
+        } else if (DT_SYMTAB == d_tag) {
+            symtab = (Elf64_Sym *)(uint64_t)(dyn_section[i].d_un.d_ptr +
+                    relocation_offset);
+        } else if(DT_SYMENT == d_tag) {
+            symtab_entsz = dyn_section[i].d_un.d_val;
+        } else {
+            continue;
+        }
+    }
+
+    if (NULL == rela
+        || 0 == rela_sz
+        || NULL == symtab
+        || sizeof(Elf64_Rela) != rela_entsz
+        || sizeof(Elf64_Sym) != symtab_entsz) {
+
+        if (ET_DYN == e_type ) {
+            dprintf(SPEW, "for DYN type relocation section is optional\n");
+            return true;
+        } else {
+            dprintf(SPEW, "for EXEC type missed mandatory dynamic information\n");
+            return false;
+        }
+    }
+
+    __asm__ volatile("stac");
+
+    for (i = 0; i < rela_sz / rela_entsz; ++i) {
+        uint64_t *target_addr =
+            (uint64_t *)(uint64_t)(rela[i].r_offset + relocation_offset);
+        uint32_t symtab_idx;
+
+        switch (rela[i].r_info & 0xFF) {
+        /* Formula for R_x86_64_32 and R_X86_64_64 are same: S + A  */
+        case R_X86_64_32:
+        case R_X86_64_64:
+            *target_addr = rela[i].r_addend + relocation_offset;
+            symtab_idx = (uint32_t)(rela[i].r_info >> 32);
+            *target_addr += symtab[symtab_idx].st_value;
+            break;
+        case R_X86_64_RELATIVE:
+            *target_addr = rela[i].r_addend + relocation_offset;
+            break;
+        case 0:        /* do nothing */
+            break;
+        default:
+            dprintf(0, "Unsupported Relocation %#x\n", rela[i].r_info & 0xFF);
+            __asm__ volatile("clac");
+            return false;
+        }
+    }
+
+    __asm__ volatile("clac");
+
+    return true;
+}
+
+
 void arch_uthread_startup(void)
 {
     /**** This is x86 ring jump ****/
     struct uthread *ut = (struct uthread *) tls_get(TLS_ENTRY_UTHREAD);
+    Elf64_Dyn *dyn_section = ut->dyn_section;
 
     uint64_t paddr = 0, flags = 0;
     register uint64_t sp_usr  = ROUNDDOWN(ut->start_stack, 8);
@@ -83,9 +169,11 @@ void arch_uthread_startup(void)
     register uint64_t usr_flags = USER_EFLAGS;
 
     vmm_aspace_t *aspace = vaddr_to_aspace(sp_usr);
-
     if (!aspace)
         return;
+
+    if (NULL != dyn_section)
+        elf64_update_rela_section(ET_DYN, ut->aslr_offset, dyn_section, ut->dyn_size);
 
     arch_mmu_query(&aspace->arch_aspace, sp_usr, &paddr, &flags);
     if(paddr)

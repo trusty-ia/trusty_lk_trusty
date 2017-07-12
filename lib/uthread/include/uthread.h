@@ -31,6 +31,7 @@
 #include <kernel/thread.h>
 #include <kernel/mutex.h>
 #include <arch/uthread.h>
+#include <lib/trusty/elf.h>
 
 #if WITH_KERNEL_VM
 #include <kernel/vm.h>
@@ -102,6 +103,11 @@ typedef struct uthread
 	void *private_data;
 
 	struct arch_uthread arch;
+
+	/* used to implement TA address layout space randomization */
+	Elf64_Dyn *dyn_section;
+	uint64_t dyn_size;
+	uint32_t aslr_offset;
 } uthread_t;
 
 /* uthread generic mapping flags */

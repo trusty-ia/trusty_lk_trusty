@@ -154,6 +154,40 @@ typedef struct {
 	Elf64_Xword	p_align;
 } Elf64_Phdr;
 
+typedef struct {
+	Elf64_Sxword d_tag;
+	union {
+		Elf64_Xword d_val;
+		Elf64_Addr  d_ptr;
+	} d_un;
+} Elf64_Dyn;
+
+typedef struct {
+	Elf64_Addr    r_offset;
+	Elf64_Xword   r_info;
+	Elf64_Sxword  r_addend;
+} Elf64_Rela;
+
+typedef struct {
+	Elf64_Word   st_name;
+	uint8_t      st_info;
+	uint8_t      st_other;
+	Elf64_Half   st_shndx;
+	Elf64_Addr   st_value;
+	Elf64_Xword  st_size;
+} Elf64_Sym;
+
+#define DT_SYMTAB      6
+#define DT_RELA        7
+#define DT_RELASZ      8
+#define DT_RELAENT     9
+#define DT_SYMENT      11
+#define DT_RELSZ       18
+
+#define R_X86_64_64          1
+#define R_X86_64_RELATIVE    8
+#define R_X86_64_32         10
+
 /* p_type */
 #define PT_NULL		0		/* entry unused */
 #define PT_LOAD		1		/* Loadable segment */
@@ -204,7 +238,6 @@ typedef struct {
 	Elf64_Xword	sh_entsize;	/* table entry size */
 } Elf64_Shdr;
 
-
 /* sh_type */
 #define SHT_NULL	      0		/* entry unused */
 #define SHT_PROGBITS	      1		/* Program information */
@@ -246,5 +279,3 @@ typedef struct {
 #define SHF_TLS		     0x00000400 /* Holds thread-local data */
 #define SHF_MASKOS	     0x0ff00000 /* OS specific values */
 #define SHF_MASKPROC	     0xf0000000 /* Processor-specific values */
-
-

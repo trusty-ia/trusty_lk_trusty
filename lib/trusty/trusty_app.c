@@ -28,7 +28,7 @@
 #include <assert.h>
 #include <compiler.h>
 #include <debug.h>
-#include "elf.h"
+#include <lib/trusty/elf.h>
 #include <err.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
@@ -41,6 +41,7 @@
 #include <sys/types.h>
 #include <uthread.h>
 #include <lk/init.h>
+#include <arch/ops.h>
 
 #include <lib/trusty/trusty_app.h>
 
@@ -128,6 +129,23 @@ int trusty_als_alloc_slot(void)
 		ret = ERR_ALREADY_STARTED;
 	mutex_release(&apps_lock);
 	return ret;
+}
+
+static uint32_t get_aslr_offset(void)
+{
+	int ret = 0;
+	uint64_t random_value = 0;
+
+	ret = get_rand_64(&random_value);
+	/* in case get_rand_64 fail,
+		use the stack addr of random_value instead */
+	if (ret == 0)
+		random_value = (uint64_t)&random_value;
+
+	/* get the random value for aslr in 4K ~ 4G region,
+	 * which will be added to TA vaddr while mapping
+	 */
+	return (uint32_t)ROUNDDOWN(random_value, PAGE_SIZE);
 }
 
 /*
@@ -256,17 +274,21 @@ static status_t init_brk(trusty_app_t *trusty_app)
 	return NO_ERROR;
 }
 
-static status_t alloc_address_map(trusty_app_t *trusty_app)
+static status_t alloc_address_map(trusty_app_t *trusty_app, uint32_t aslr_offset)
 {
 	Elf64_Ehdr *elf_hdr = trusty_app->app_img;
 	void *trusty_app_image;
 	Elf64_Phdr *prg_hdr;
+	Elf64_Phdr *phdr_dyn;
 	u_int i, trusty_app_idx;
 	status_t ret;
+
+#if DEBUG_LOAD_TRUSTY_APP
 	vaddr_t start_code = ~0;
 	vaddr_t start_data = 0;
 	vaddr_t end_code = 0;
 	vaddr_t end_data = 0;
+#endif
 
 	trusty_app_image = trusty_app->app_img;
 	trusty_app_idx = trusty_app - trusty_app_list;
@@ -287,6 +309,11 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 			prg_hdr->p_flags);
 #endif
 
+		if (prg_hdr->p_type == PT_DYNAMIC) {
+			phdr_dyn = prg_hdr;
+			continue;
+		}
+
 		if (prg_hdr->p_type != PT_LOAD)
 			continue;
 
@@ -299,7 +326,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 
 		size_t size = (prg_hdr->p_memsz + PAGE_MASK) & ~PAGE_MASK;
 		paddr_t paddr = vaddr_to_paddr(trusty_app_image + prg_hdr->p_offset);
-		vaddr_t vaddr = prg_hdr->p_vaddr;
+		vaddr_t vaddr = prg_hdr->p_vaddr + aslr_offset;
 		u_int flags = PF_TO_UTM_FLAGS(prg_hdr->p_flags) | UTM_FIXED;
 
 		ret = uthread_map_contig(trusty_app->ut, &vaddr, paddr, size,
@@ -309,7 +336,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 			return ret;
 		}
 
-		vaddr_t stack_bot = TRUSTY_APP_STACK_TOP - trusty_app->props.min_stack_size;
+		vaddr_t stack_bot = TRUSTY_APP_STACK_TOP + aslr_offset - trusty_app->props.min_stack_size;
 		/* check for overlap into user stack range */
 		if (stack_bot < vaddr + size) {
 			dprintf(CRITICAL,
@@ -326,30 +353,30 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 			trusty_app_idx, vaddr, paddr, size, prg_hdr->p_memsz,
 			flags & UTM_R ? 'r' : '-', flags & UTM_W ? 'w' : '-',
 			flags & UTM_X ? 'x' : '-', flags);
-#endif
 
 		/* start of code/data */
-		first = prg_hdr->p_vaddr;
+		first = prg_hdr->p_vaddr + aslr_offset;
 		if (first < start_code)
 			start_code = first;
 		if (start_data < first)
 			start_data = first;
 
 		/* end of code/data */
-		last = prg_hdr->p_vaddr + prg_hdr->p_filesz;
+		last = prg_hdr->p_vaddr + aslr_offset + prg_hdr->p_filesz;
 		if ((prg_hdr->p_flags & PF_X) && end_code < last)
 			end_code = last;
 		if (end_data < last)
 			end_data = last;
+#endif
 
 		/* end of brk */
-		last_mem = prg_hdr->p_vaddr + prg_hdr->p_memsz;
+		last_mem = prg_hdr->p_vaddr + aslr_offset + prg_hdr->p_memsz;
 		if (last_mem > trusty_app->start_brk) {
 			void *segment_start = trusty_app_image + prg_hdr->p_offset;
 
 			trusty_app->start_brk = last_mem;
 			/* make brk consume the rest of the page */
-			trusty_app->end_brk = prg_hdr->p_vaddr + size;
+			trusty_app->end_brk = prg_hdr->p_vaddr + aslr_offset + size;
 
 			/* zero fill the remainder of the page for brk.
 			 * do it here (instead of init_brk) so we don't
@@ -378,6 +405,15 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 
 	dprintf(SPEW, "trusty_app %d: entry 0x%08lx\n", trusty_app_idx, trusty_app->ut->entry);
 #endif
+
+	if (NULL != phdr_dyn) {
+		Elf64_Dyn *dyn_section = (Elf64_Dyn *)(trusty_app_image + phdr_dyn->p_offset);
+		trusty_app->ut->dyn_section = dyn_section;
+		trusty_app->ut->dyn_size = phdr_dyn->p_filesz;
+		trusty_app->ut->aslr_offset = aslr_offset;
+	} else
+		trusty_app->ut->dyn_section = NULL;
+
 	return NO_ERROR;
 }
 
@@ -402,8 +438,6 @@ static char *align_next_app(Elf64_Ehdr *elf_hdr, Elf64_Shdr *pad_hdr,
 
 	ASSERT(ROUNDUP(max_extent, 8) == elf_hdr->e_shoff);
 	ASSERT(pad_hdr);
-
-
 
 	trusty_app_image_addr = (char *)elf_hdr;
 	max_extent = (elf_hdr->e_shoff + (elf_hdr->e_shnum * elf_hdr->e_shentsize)) - 1;
@@ -597,6 +631,7 @@ void trusty_app_init(void)
 		char name[32];
 		uthread_t *uthread;
 		int ret;
+		uint32_t aslr_offset;
 
 		snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x",
 			 i,
@@ -607,8 +642,11 @@ void trusty_app_init(void)
 		/* entry is 0 at this point since we haven't parsed the elf hdrs
 		 * yet */
 		Elf64_Ehdr *elf_hdr = trusty_app->app_img;
-		uthread = uthread_create(name, elf_hdr->e_entry,
-					 DEFAULT_PRIORITY, TRUSTY_APP_STACK_TOP,
+
+		aslr_offset = get_aslr_offset();
+
+		uthread = uthread_create(name, elf_hdr->e_entry + aslr_offset,
+					 DEFAULT_PRIORITY, TRUSTY_APP_STACK_TOP + aslr_offset,
 					 trusty_app->props.min_stack_size, trusty_app);
 		if (uthread == NULL) {
 			/* TODO: do better than this */
@@ -616,7 +654,7 @@ void trusty_app_init(void)
 		}
 		trusty_app->ut = uthread;
 
-		ret = alloc_address_map(trusty_app);
+		ret = alloc_address_map(trusty_app, aslr_offset);
 		if (ret != NO_ERROR) {
 			panic("failed to load address map\n");
 		}
