@@ -26,12 +26,12 @@
 #define SYSCALL_ENTRY_SIZE    0x08
 
 FUNCTION (x86_syscall)
-    #copy stack from uthread
-    movq $current_stack, %r15
-    movq (%r15), %rsp
+    /* switch to kernel gs */
+    swapgs
+
     sti
     pushq %rbx /* Ring 3 return address */
-    pushq %rbp /* Ring 3 esp */
+    pushq %rbp /* Ring 3 RSP */
 
     pushq %r15
     pushq %r14
@@ -55,13 +55,13 @@ FUNCTION (x86_syscall)
      * Multiplier different for 32 and 64
      */
     movq $SYSCALL_ENTRY_SIZE, %r15
-    /* Result is stored in rax. Before multiplication rax contains syscall No */
+    /* Result is stored in RAX. Before multiplication RAX contains syscall No. */
 
     mul %r15
     movq $syscall_table, %r14
     add %r14, %rax
     movq %r9,%rdx
-    call (%rax)
+    call *(%rax)
 
     popq %rdi
     popq %rsi
@@ -78,6 +78,17 @@ FUNCTION (x86_syscall)
     popq %r14
     popq %r15
 
-    popq %rcx /* pop esp */
-    popq %rdx /* pop eip */
+    popq %rcx /* pop RSP */
+    popq %rdx /* pop RIP */
+
+    /*
+     * switch to user gs
+     * Have to make sure there is no interrupt triggered between swapgs and sysexit instructions,
+     * if this happens, GS.base is switch to user level GS.base, but current context is still in
+     * kernel level, it leads to get global states failure on current processor.
+     */
+    cli
+    swapgs
+    sti
+
     rex.W sysexit

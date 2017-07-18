@@ -373,10 +373,17 @@ static void sm_secondary_init(uint level)
 	thread_set_pinned_cpu(nsidlethreads[cpu], cpu);
 	thread_set_real_time(nsidlethreads[cpu]);
 
+#if ARCH_X86_64
+	if ((0 != cpu) || ns_threads_started) {
+		thread_resume(nsirqthreads[cpu]);
+		thread_resume(nsidlethreads[cpu]);
+	}
+#else
 	if (ns_threads_started) {
 		thread_resume(nsirqthreads[cpu]);
 		thread_resume(nsidlethreads[cpu]);
 	}
+#endif
 }
 
 LK_INIT_HOOK_FLAGS(libsm_cpu, sm_secondary_init, LK_INIT_LEVEL_PLATFORM - 2, LK_INIT_FLAG_ALL_CPUS);

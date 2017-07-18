@@ -80,7 +80,8 @@ void sm_wall_update(void)
     struct sm_wall_item *wi;
     uint cpu = arch_curr_cpu_num();
 
-    ASSERT(wall_registration_closed);
+    //:TODO: Need to fix this bug.
+    //ASSERT(wall_registration_closed);
     ASSERT(arch_ints_disabled());
 
     /* update per cpu items */
@@ -319,6 +320,10 @@ static void sm_wall_finish_init(uint lvl)
     wall_sz = ALIGN(wall_sz, PAGE_SIZE);
 }
 
+/*
+ * BSP has to launch applications first to make sure APs have
+ * finished register sm wall items.
+ */
 LK_INIT_HOOK_FLAGS(sm_wall_finish_init, sm_wall_finish_init,
-        LK_INIT_LEVEL_APPS - 2, LK_INIT_FLAG_PRIMARY_CPU);
+        LK_INIT_LEVEL_APPS + 2, LK_INIT_FLAG_PRIMARY_CPU);
 
