@@ -26,6 +26,7 @@
 #include <debug.h>
 #include <arch.h>
 #include <arch/x86.h>
+#include <arch/x86/mp.h>
 #include <arch/x86/descriptor.h>
 #include <arch/x86/mmu.h>
 #include <arch/uthread_mmu.h>
@@ -33,11 +34,9 @@
 
 #define PAGE_MASK   (PAGE_SIZE - 1)
 
-extern uint64_t __tss_start;
 extern uint64_t __tss_end;
 extern void x86_syscall(void);
-static uint64_t syscall_stack;
-volatile uint64_t current_stack;
+volatile uint64_t current_stack[SMP_MAX_CPUS];
 
 /******************************************************************************
   This is a part where all x86 specific user space initalization is done.
@@ -45,29 +44,32 @@ volatile uint64_t current_stack;
   2. Set up system call.
   3. Call VM specific APIs if required
  *********************************************************************************/
-static void set_tss_segment(void)
+void set_tss_segment_percpu(void)
 {
+    uint64_t addr;
     /* Get system tss segment */
-    tss_t *system_tss = get_system_selector(TSS_SELECTOR);
-    syscall_stack = (uint64_t)&__tss_end;
-    system_tss->rsp0 = syscall_stack;
+    tss_t *system_tss = get_tss_base();
+    uint cpu_id = arch_curr_cpu_num();
+
+    addr = (uint64_t)&__tss_end - (uint64_t)(cpu_id * PAGE_SIZE);
+
+    system_tss->rsp0 = addr;
+    x86_set_syscall_stack(addr);
 }
 
-static void setup_syscall(void)
+void setup_syscall_percpu(void)
 {
     /* msr_id,low,hi */
     write_msr(SYSENTER_CS_MSR, CODE_64_SELECTOR); /* cs_addr */
-    write_msr(SYSENTER_ESP_MSR, syscall_stack); /* esp_addr */
+    write_msr(SYSENTER_ESP_MSR, x86_get_syscall_stack()); /* esp_addr */
     write_msr(SYSENTER_EIP_MSR, (uint64_t)(x86_syscall)); /* eip_addr */
 }
 
 /*******************************************************************************/
 void arch_uthread_init()
 {
-    syscall_stack = 0;
-    current_stack = 0;
-    set_tss_segment();
-    setup_syscall();
+    set_tss_segment_percpu();
+    setup_syscall_percpu();
 }
 
 #ifdef ASLR_OF_TA
@@ -165,8 +167,8 @@ void arch_uthread_startup(void)
     uint flags = 0;
     register uint64_t sp_usr  = ROUNDDOWN(ut->start_stack, 8);
     register uint64_t entry = ut->entry;
-    register uint64_t code_seg = USER_CODE_64_SELECTOR | USER_DPL;
-    register uint64_t data_seg = USER_DATA_64_SELECTOR | USER_DPL;
+    register uint64_t code_seg = USER_CODE_64_SELECTOR | USER_RPL;
+    register uint64_t data_seg = USER_DATA_64_SELECTOR | USER_RPL;
     register uint64_t usr_flags = USER_EFLAGS;
 
     vmm_aspace_t *aspace = vaddr_to_aspace((void *)sp_usr);
@@ -182,6 +184,7 @@ void arch_uthread_startup(void)
     if(paddr)
         *(uint32_t *)sp_usr = 0x0;
 
+    write_msr(X86_MSR_KRNL_GS_BASE, 0);
     __asm__ __volatile__ (
             "pushq %0   \n\t"
             "pushq %1   \n\t"
@@ -190,6 +193,7 @@ void arch_uthread_startup(void)
             "pushq %4   \n\t"
             "pushq %0   \n\t"
             "popq %%rax \n\t"
+            "swapgs \n\t"
             "movw %%ax, %%ds    \n\t"
             "movw %%ax, %%es    \n\t"
             "movw %%ax, %%fs    \n\t"
@@ -202,24 +206,26 @@ void arch_uthread_startup(void)
 
 void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
 {
+    uint cpu_id = arch_curr_cpu_num();
+    tss_t *system_tss = get_tss_base();
+
     /*
      * In the given scheme, eip and esp changes happen on external/lk.
      * User space specific changes happen here. Which includes tss and gs
      */
     if (new_ut) {
         /* userspace thread */
-        tss_t *system_tss = get_system_selector(TSS_SELECTOR);
-        current_stack = new_ut->arch.kstack;
-        system_tss->rsp0 = current_stack;
-        /* setting gs for system call stack */
+        current_stack[cpu_id] = new_ut->arch.kstack;
+        system_tss->rsp0 = current_stack[cpu_id];
         x86_set_cr3(vaddr_to_paddr(new_ut->page_table));
     } else {
-        tss_t *system_tss = get_system_selector(TSS_SELECTOR);
-        current_stack = syscall_stack;
-        system_tss->rsp0 = current_stack;
         /* kernel tasks */
+        current_stack[cpu_id] = x86_get_syscall_stack();
+        system_tss->rsp0 = current_stack[cpu_id];
         x86_set_cr3(x86_get_kernel_table());
     }
+
+    write_msr(SYSENTER_ESP_MSR, current_stack[cpu_id]);
 }
 
 status_t arch_uthread_create(struct uthread *ut)
