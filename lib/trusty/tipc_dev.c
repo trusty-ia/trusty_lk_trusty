@@ -154,12 +154,12 @@ typedef int (*tipc_data_cb_t) (uint8_t *dst, size_t sz, void *ctx);
 
 static int
 tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
-               tipc_data_cb_t cb, void *cb_ctx,  uint16_t data_len,
+               tipc_data_cb_t cb, void *cb_ctx,  size_t data_len,
                bool wait);
 
 static int
 tipc_send_buf(struct tipc_dev *dev, uint32_t local, uint32_t remote,
-              void *data, uint16_t data_len, bool wait);
+              void *data, size_t data_len, bool wait);
 
 
 #define vdev_to_dev(v)  containerof((v), struct tipc_dev, vd)
@@ -631,7 +631,7 @@ static void handle_tx_msg(struct tipc_dev *dev, handle_t *chan)
 			       __func__, ret);
 		}
 
-		uint16_t ttl_size = cb_ctx.msg_inf.len;
+		size_t ttl_size = cb_ctx.msg_inf.len;
 
 		LTRACEF("forward message (%d bytes)\n", ttl_size);
 
@@ -1007,7 +1007,7 @@ static status_t tipc_vdev_kick_vq(struct vdev *vd, uint vqid)
 
 static int
 tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
-               tipc_data_cb_t cb, void *cb_ctx,  uint16_t data_len,
+               tipc_data_cb_t cb, void *cb_ctx,  size_t data_len,
                bool wait)
 {
 	paddr_t out_phys[MAX_TX_IOVS];
@@ -1132,7 +1132,7 @@ static int _send_buf(uint8_t *dst, size_t sz, void *ctx)
 
 static int
 tipc_send_buf(struct tipc_dev *dev, uint32_t local, uint32_t remote,
-              void *data, uint16_t data_len, bool wait)
+              void *data, size_t data_len, bool wait)
 {
 	struct buf_ctx ctx = {data, data_len};
 
