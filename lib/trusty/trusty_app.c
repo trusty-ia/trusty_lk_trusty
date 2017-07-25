@@ -279,7 +279,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app, uint32_t aslr_offset
 	Elf64_Ehdr *elf_hdr = trusty_app->app_img;
 	void *trusty_app_image;
 	Elf64_Phdr *prg_hdr;
-	Elf64_Phdr *phdr_dyn;
+	Elf64_Phdr *phdr_dyn = NULL;
 	u_int i, trusty_app_idx;
 	status_t ret;
 
