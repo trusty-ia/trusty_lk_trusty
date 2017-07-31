@@ -28,7 +28,7 @@
 
 static void trusty_init(uint level)
 {
-	printf("initializing trusty (%s)\n", lk_version);
+	dprintf(SPEW, "initializing trusty (%s)\n", lk_version);
 
 	trusty_app_init();
 }
