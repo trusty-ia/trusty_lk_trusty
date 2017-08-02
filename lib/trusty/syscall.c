@@ -315,7 +315,7 @@ long sys_get_device_info(user_addr_t info, bool need_seed)
 
 	if (!need_seed)
 		/* seed is the sensitive secret date, do not return to user app if it is not required. */
-		memset(dev_info.seed, 0, sizeof(dev_info.seed));
+		memset(dev_info.seed_list, 0, sizeof(dev_info.seed_list));
 
 	dev_info.state.data = 0;
 
