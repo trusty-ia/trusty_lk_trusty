@@ -131,6 +131,7 @@ int trusty_als_alloc_slot(void)
 	return ret;
 }
 
+#ifdef ASLR_OF_TA
 static uint32_t get_aslr_offset(void)
 {
 	int ret = 0;
@@ -147,6 +148,12 @@ static uint32_t get_aslr_offset(void)
 	 */
 	return (uint32_t)ROUNDDOWN(random_value, PAGE_SIZE);
 }
+#else
+static uint32_t get_aslr_offset(void)
+{
+	return 0;
+}
+#endif
 
 /*
  * This is part of the manifest file.
@@ -279,9 +286,12 @@ static status_t alloc_address_map(trusty_app_t *trusty_app, uint32_t aslr_offset
 	Elf64_Ehdr *elf_hdr = trusty_app->app_img;
 	void *trusty_app_image;
 	Elf64_Phdr *prg_hdr;
-	Elf64_Phdr *phdr_dyn = NULL;
 	u_int i, trusty_app_idx;
 	status_t ret;
+
+#ifdef ASLR_OF_TA
+	Elf64_Phdr *phdr_dyn = NULL;
+#endif
 
 #if DEBUG_LOAD_TRUSTY_APP
 	vaddr_t start_code = ~0;
@@ -309,10 +319,12 @@ static status_t alloc_address_map(trusty_app_t *trusty_app, uint32_t aslr_offset
 			prg_hdr->p_flags);
 #endif
 
+#ifdef ASLR_OF_TA
 		if (prg_hdr->p_type == PT_DYNAMIC) {
 			phdr_dyn = prg_hdr;
 			continue;
 		}
+#endif
 
 		if (prg_hdr->p_type != PT_LOAD)
 			continue;
@@ -406,6 +418,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app, uint32_t aslr_offset
 	dprintf(SPEW, "trusty_app %d: entry 0x%08lx\n", trusty_app_idx, trusty_app->ut->entry);
 #endif
 
+#ifdef ASLR_OF_TA
 	if (NULL != phdr_dyn) {
 		Elf64_Dyn *dyn_section = (Elf64_Dyn *)(trusty_app_image + phdr_dyn->p_offset);
 		trusty_app->ut->dyn_section = dyn_section;
@@ -413,6 +426,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app, uint32_t aslr_offset
 		trusty_app->ut->aslr_offset = aslr_offset;
 	} else
 		trusty_app->ut->dyn_section = NULL;
+#endif
 
 	return NO_ERROR;
 }

@@ -70,6 +70,7 @@ void arch_uthread_init()
     setup_syscall();
 }
 
+#ifdef ASLR_OF_TA
 static bool elf64_update_rela_section(uint16_t e_type, uint64_t relocation_offset,
     Elf64_Dyn *dyn_section, uint64_t dyn_section_sz)
 {
@@ -153,13 +154,12 @@ static bool elf64_update_rela_section(uint16_t e_type, uint64_t relocation_offse
 
     return true;
 }
-
+#endif
 
 void arch_uthread_startup(void)
 {
     /**** This is x86 ring jump ****/
     struct uthread *ut = (struct uthread *) tls_get(TLS_ENTRY_UTHREAD);
-    Elf64_Dyn *dyn_section = ut->dyn_section;
 
     uint64_t paddr = 0, flags = 0;
     register uint64_t sp_usr  = ROUNDDOWN(ut->start_stack, 8);
@@ -172,8 +172,10 @@ void arch_uthread_startup(void)
     if (!aspace)
         return;
 
-    if (NULL != dyn_section)
-        elf64_update_rela_section(ET_DYN, ut->aslr_offset, dyn_section, ut->dyn_size);
+#ifdef ASLR_OF_TA
+    if (NULL != ut->dyn_section)
+        elf64_update_rela_section(ET_DYN, ut->aslr_offset, ut->dyn_section, ut->dyn_size);
+#endif
 
     arch_mmu_query(&aspace->arch_aspace, sp_usr, &paddr, &flags);
     if(paddr)

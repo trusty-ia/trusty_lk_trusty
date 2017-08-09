@@ -104,10 +104,12 @@ typedef struct uthread
 
 	struct arch_uthread arch;
 
+#ifdef ASLR_OF_TA
 	/* used to implement TA address layout space randomization */
 	Elf64_Dyn *dyn_section;
 	uint64_t dyn_size;
 	uint32_t aslr_offset;
+#endif
 } uthread_t;
 
 /* uthread generic mapping flags */
