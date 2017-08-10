@@ -144,7 +144,7 @@ static bool elf64_update_rela_section(uint16_t e_type, uint64_t relocation_offse
         case 0:        /* do nothing */
             break;
         default:
-            dprintf(0, "Unsupported Relocation %#x\n", rela[i].r_info & 0xFF);
+            dprintf(0, "Unsupported Relocation %#llx\n", rela[i].r_info & 0xFF);
             __asm__ volatile("clac");
             return false;
         }

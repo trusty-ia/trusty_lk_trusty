@@ -120,6 +120,8 @@ long sys_brk(u_int brk)
 long sys_exit_group(void)
 {
 	thread_t *current = get_current_thread();
+	dprintf(CRITICAL, "exit called, thread %p, name %s\n",
+		current, current->name);
 	uthread_exit(0);
 	return 0L;
 }
@@ -267,7 +269,7 @@ long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
 
 #endif
 
-static bool valid_ta_to_retrieve_seed()
+static bool valid_ta_to_retrieve_seed(void)
 {
 	uuid_t white_list[] = {
 		HWCRYPTO_SRV_APP_UUID,
@@ -289,16 +291,13 @@ static bool valid_ta_to_retrieve_seed()
  * Based on the design the IMR region for LK will reserved some bytes for ROT
  * and seed storage (size = sizeof(seed_response_t)+sizeof(rot_data_t))
  */
-long sys_get_device_info(user_addr_t * info, bool need_seed)
+long sys_get_device_info(user_addr_t info, bool need_seed)
 {
 	long ret = 0;
 	trusty_device_info_t dev_info;
 
 	if (need_seed && !valid_ta_to_retrieve_seed())
 		panic("the caller is invalid!\n");
-
-        if (!info)
-                panic("the params is NULL!\n");
 
 	if(g_trusty_startup_info.size_of_this_struct != sizeof(trusty_startup_info_t))
 		panic("trusty_startup_info_t size mismatch!\n");
@@ -324,7 +323,7 @@ long sys_get_device_info(user_addr_t * info, bool need_seed)
 	memset(&dev_info, 0, sizeof(dev_info));
 
 	if (ret != NO_ERROR)
-		panic("failed (%d) to copy structure to user\n", ret);
+		panic("failed (%ld) to copy structure to user\n", ret);
 
 	return NO_ERROR;
 }

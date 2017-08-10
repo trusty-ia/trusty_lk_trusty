@@ -85,7 +85,7 @@ uint als_slot_cnt;
 
 #define PRINT_TRUSTY_APP_UUID(tid,u)					\
 	dprintf(SPEW,							\
-		"trusty_app %d uuid: 0x%x 0x%x 0x%x 0x%x%x 0x%x%x%x%x%x%x\n",\
+		"trusty_app %ld uuid: 0x%x 0x%x 0x%x 0x%x%x 0x%x%x%x%x%x%x\n",\
 		tid,							\
 		(u)->time_low, (u)->time_mid,				\
 		(u)->time_hi_and_version,				\
@@ -600,9 +600,9 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 	return ERR_NOT_FOUND;
 }
 
-void duplicated_uuid_filter()
+static void duplicated_uuid_filter(void)
 {
-	int i, j;
+	u_int i, j;
 	trusty_app_t *ta = trusty_app_list;
 	trusty_app_t *ta_cmp = ta + 1;
 
