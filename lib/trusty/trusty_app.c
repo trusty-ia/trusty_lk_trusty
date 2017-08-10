@@ -65,7 +65,7 @@ typedef struct trusty_app_manifest {
 } trusty_app_manifest_t;
 
 #define MAX_TRUSTY_APP_COUNT	(PAGE_SIZE / sizeof(trusty_app_t))
-#define TRUSTY_APP_STACK_TOP	0x1000000 /* 16MB */
+#define TRUSTY_APP_STACK_TOP	0x1000000ULL /* 16MB */
 #define PAGE_MASK		(PAGE_SIZE - 1)
 
 static u_int trusty_app_count;
@@ -143,10 +143,10 @@ static uint32_t get_aslr_offset(void)
 	if (ret == 0)
 		random_value = (uint64_t)&random_value;
 
-	/* get the random value for aslr in 4K ~ 4G region,
+	/* get the random value for aslr in 4K ~ 3G region,
 	 * which will be added to TA vaddr while mapping
 	 */
-	return (uint32_t)ROUNDDOWN(random_value, PAGE_SIZE);
+	return (uint32_t)ROUNDDOWN((random_value % 0xC0000000), PAGE_SIZE);
 }
 #else
 static uint32_t get_aslr_offset(void)
@@ -277,7 +277,7 @@ static status_t init_brk(trusty_app_t *trusty_app)
 		return ERR_NO_MEMORY;
 	}
 
-	trusty_app->end_brk += trusty_app->props.min_heap_size;
+	trusty_app->end_brk += (uint64_t)trusty_app->props.min_heap_size;
 	return NO_ERROR;
 }
 
