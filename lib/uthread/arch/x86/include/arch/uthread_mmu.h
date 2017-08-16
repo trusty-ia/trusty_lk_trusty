@@ -34,6 +34,6 @@ status_t x86_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr);
 #if ARCH_X86_32
 uint32_t x86_get_kernel_table();
 #elif ARCH_X86_64
-uint64_t x86_get_kernel_table();
+uint64_t x86_get_kernel_table(void);
 #endif
 #endif

@@ -37,7 +37,7 @@ static void x86_uthread_mmu_init(uint level)
 {
 }
 
-uint64_t x86_get_kernel_table()
+uint64_t x86_get_kernel_table(void)
 {
     uint64_t cr3 = get_kernel_cr3();
     cr3 = cr3?cr3:x86_get_cr3();
@@ -47,9 +47,9 @@ uint64_t x86_get_kernel_table()
 LK_INIT_HOOK_FLAGS(libuthreadx86mmu, x86_uthread_mmu_init,
         LK_INIT_LEVEL_ARCH_EARLY, LK_INIT_FLAG_ALL_CPUS);
 
-static uint64_t *x86_uthread_mmu_alloc_pgtbl()
+static uint64_t x86_uthread_mmu_alloc_pgtbl(void)
 {
-    uint64_t ret = ((u_int *)x86_create_new_cr3());
+    uint64_t ret = ((uint64_t)x86_create_new_cr3());
     return ret;
 }
 
@@ -60,7 +60,7 @@ status_t x86_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
     status_t err = NO_ERROR;
 
     if (ut->page_table == NULL) {
-        ut->page_table = x86_uthread_mmu_alloc_pgtbl();
+        ut->page_table = (void *)x86_uthread_mmu_alloc_pgtbl();
         if (ut->page_table == NULL) {
             dprintf(CRITICAL,
                     "unable to allocate initial page table\n");
@@ -70,12 +70,12 @@ status_t x86_uthread_mmu_map(uthread_t *ut, paddr_t paddr,
 
     page_table = (uint64_t *)(ut->page_table);
     ASSERT(page_table);
-    err = x86_mmu_add_mapping(page_table, paddr, vaddr, flags);
+    err = x86_mmu_add_mapping((map_addr_t)page_table, paddr, vaddr, flags);
     return err;
 }
 
 status_t x86_uthread_mmu_unmap(uthread_t *ut, vaddr_t vaddr)
 {
-   status_t ret = x86_mmu_unmap(ut->page_table, vaddr, 1);
+   status_t ret = x86_mmu_unmap((map_addr_t)ut->page_table, vaddr, 1);
    return ret;
 }

@@ -35,9 +35,9 @@
 
 extern uint64_t __tss_start;
 extern uint64_t __tss_end;
-extern void x86_syscall();
+extern void x86_syscall(void);
 static uint64_t syscall_stack;
-volatile uint64_t *current_stack;
+volatile uint64_t current_stack;
 
 /******************************************************************************
   This is a part where all x86 specific user space initalization is done.
@@ -45,15 +45,15 @@ volatile uint64_t *current_stack;
   2. Set up system call.
   3. Call VM specific APIs if required
  *********************************************************************************/
-static void set_tss_segment()
+static void set_tss_segment(void)
 {
     /* Get system tss segment */
     tss_t *system_tss = get_system_selector(TSS_SELECTOR);
-    syscall_stack = &__tss_end;
+    syscall_stack = (uint64_t)&__tss_end;
     system_tss->rsp0 = syscall_stack;
 }
 
-static void setup_syscall()
+static void setup_syscall(void)
 {
     /* msr_id,low,hi */
     write_msr(SYSENTER_CS_MSR, CODE_64_SELECTOR); /* cs_addr */
@@ -161,14 +161,15 @@ void arch_uthread_startup(void)
     /**** This is x86 ring jump ****/
     struct uthread *ut = (struct uthread *) tls_get(TLS_ENTRY_UTHREAD);
 
-    uint64_t paddr = 0, flags = 0;
+    uint64_t paddr = 0;
+    uint flags = 0;
     register uint64_t sp_usr  = ROUNDDOWN(ut->start_stack, 8);
     register uint64_t entry = ut->entry;
     register uint64_t code_seg = USER_CODE_64_SELECTOR | USER_DPL;
     register uint64_t data_seg = USER_DATA_64_SELECTOR | USER_DPL;
     register uint64_t usr_flags = USER_EFLAGS;
 
-    vmm_aspace_t *aspace = vaddr_to_aspace(sp_usr);
+    vmm_aspace_t *aspace = vaddr_to_aspace((void *)sp_usr);
     if (!aspace)
         return;
 
@@ -177,7 +178,7 @@ void arch_uthread_startup(void)
         elf64_update_rela_section(ET_DYN, ut->aslr_offset, ut->dyn_section, ut->dyn_size);
 #endif
 
-    arch_mmu_query(&aspace->arch_aspace, sp_usr, &paddr, &flags);
+    arch_mmu_query(&aspace->arch_aspace, sp_usr, (paddr_t *)&paddr, &flags);
     if(paddr)
         *(uint32_t *)sp_usr = 0x0;
 
@@ -362,7 +363,7 @@ status_t arch_copy_from_user(void *kdest, user_addr_t usrc, size_t len)
     if (len == 0)
         return NO_ERROR;
 
-    if (kdest == NULL || usrc == NULL)
+    if (kdest == NULL || usrc == 0)
         return ERR_FAULT;
 
     /* TODO: be smarter about handling invalid addresses... */
@@ -382,7 +383,7 @@ status_t arch_copy_to_user(user_addr_t udest, const void *ksrc, size_t len)
     if (len == 0)
         return NO_ERROR;
 
-    if (ksrc == NULL || udest == NULL)
+    if (ksrc == NULL || udest == 0)
         return ERR_FAULT;
 
     /* TODO: be smarter about handling invalid addresses... */
