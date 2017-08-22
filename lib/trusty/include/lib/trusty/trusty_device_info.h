@@ -114,7 +114,7 @@ typedef struct trusty_device_info{
 
     /* Concatenation of mmc product name with a string representation of PSN */
     char serial[MMC_PROD_NAME_WITH_PSN_LEN];
-}__attribute__((packed, aligned(8))) trusty_device_info_t;
+}__attribute__((packed)) trusty_device_info_t;
 
 #endif
 
