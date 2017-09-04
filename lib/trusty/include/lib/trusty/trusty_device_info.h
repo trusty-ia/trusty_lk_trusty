@@ -103,8 +103,9 @@ typedef struct trusty_device_info{
     /* the size of the structure, used to sync up in different modules(tos loader, TA, LK kernel) */
     uint32_t        size;
 
-    /* used as the HUK derived from CSE by kernelflinger */
-    seed_info_t seed_list[BOOTLOADER_SEED_MAX_ENTRIES];
+    /* seed */
+    uint32_t        num_seeds;
+    seed_info_t     seed_list[BOOTLOADER_SEED_MAX_ENTRIES];
 
     /* root of trusty field used to binding the hw-backed key */
     rot_data_t      rot;
