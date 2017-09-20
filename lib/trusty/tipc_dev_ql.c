@@ -449,17 +449,20 @@ static long dev_get_event(struct ql_tipc_dev *dev, void *ns_data, size_t ns_sz,
 			/* no handles left */
 			return set_status(dev, opcode, rc, 0);
 		}
-		if (rc == ERR_TIMED_OUT) {
-			/* no events: return an empty event */
-			evt->handle = 0;
-			evt->event  = 0;
-			evt->cookie = 0;
-		}
-		if (rc < 0 && rc != ERR_TIMED_OUT) {
-			/* only possible if somebody else is waiting
-			   on the same handle which should never happen */
-			panic("%s: couldn't wait for handle events (%d)\n",
-			      __func__, rc);
+
+		if (rc < 0) {
+			if (rc == ERR_TIMED_OUT) {
+				/* no events: return an empty event */
+				evt->handle = 0;
+				evt->event  = 0;
+				evt->cookie = 0;
+			}
+			else {
+				/* only possible if somebody else is waiting
+				on the same handle which should never happen */
+				panic("%s: couldn't wait for handle events (%d)\n",
+				__func__, rc);
+			}
 		} else {
 			/* got an event: return it */
 			ept = handle_get_cookie(chan);
