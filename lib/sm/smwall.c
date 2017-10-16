@@ -35,9 +35,17 @@
 #include <stdlib.h>
 #include <trace.h>
 
+#ifdef EPT_DEBUG
+#include <platform/vmcall.h>
+#endif
+
 #define LOCAL_TRACE  0
 
 #define ITEM_ALIGNMENT  8
+
+#ifdef EPT_DEBUG
+static paddr_t wall_pa;
+#endif
 
 static vaddr_t wall_va;
 static size_t  wall_sz;
@@ -207,6 +215,10 @@ long smc_setup_wall_stdcall(smc32_args_t *args)
         return SM_ERR_INTERNAL_FAILURE;
     }
 
+#ifdef EPT_DEBUG
+    make_ept_update_vmcall(ADD, ns_pa, wall_sz);
+#endif
+
     LTRACEF("Mapped: pa=%lld sz=%u @ %p\n", ns_pa, ns_sz, ns_va);
 
     lock_wall();
@@ -219,6 +231,11 @@ long smc_setup_wall_stdcall(smc32_args_t *args)
     }
     sm_wall_format(ns_va);
     wall_va = (vaddr_t)ns_va;
+
+#ifdef EPT_DEBUG
+    wall_pa = (paddr_t)ns_pa;
+#endif
+
     unlock_wall();
 
     return 0;
@@ -241,6 +258,11 @@ long smc_destroy_wall_stdcall(smc32_args_t *args)
         wall_va = 0;
     }
     unlock_wall();
+
+#ifdef EPT_DEBUG
+    make_ept_update_vmcall(REMOVE, wall_pa, wall_sz);
+#endif
+
 
     if (va) {
         LTRACEF("Releasing the wall buffer: %p\n", (void*) va);
