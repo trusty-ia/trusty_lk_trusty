@@ -38,6 +38,10 @@
 
 #include "tipc_dev_ql.h"
 
+#ifdef EPT_DEBUG
+#include <platform/vmcall.h>
+#endif
+
 #define LOCAL_TRACE 0
 
 /*
@@ -524,6 +528,7 @@ long ql_tipc_shutdown_device(ns_addr_t buf_pa)
 long ql_tipc_handle_cmd(ns_addr_t buf_pa, ns_size_t cmd_sz)
 {
 	struct tipc_cmd_hdr cmd_hdr;
+	long ret;
 
 	/* lookup device */
 	struct ql_tipc_dev *dev = dev_lookup(buf_pa);
@@ -538,6 +543,10 @@ long ql_tipc_handle_cmd(ns_addr_t buf_pa, ns_size_t cmd_sz)
 		return SM_ERR_INVALID_PARAMETERS;
 	}
 
+#ifdef EPT_DEBUG
+	make_ept_update_vmcall(ADD, dev->ns_pa, sizeof(cmd_hdr));
+#endif
+
 	/* copy out command header */
 	memcpy(&cmd_hdr, dev->ns_va, sizeof(cmd_hdr));
 
@@ -547,6 +556,12 @@ long ql_tipc_handle_cmd(ns_addr_t buf_pa, ns_size_t cmd_sz)
 		return SM_ERR_INVALID_PARAMETERS;
 	}
 
-	return dev_handle_cmd(dev, &cmd_hdr, dev->ns_va + sizeof(cmd_hdr));
+	ret = dev_handle_cmd(dev, &cmd_hdr, dev->ns_va + sizeof(cmd_hdr));
+
+#ifdef EPT_DEBUG
+	make_ept_update_vmcall(REMOVE, dev->ns_pa, sizeof(cmd_hdr));
+#endif
+
+	return ret;
 }
 
