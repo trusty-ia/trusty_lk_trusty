@@ -64,6 +64,10 @@ typedef struct trusty_app_manifest {
 #define TRUSTY_APP_START_ADDR   0x8000
 #define TRUSTY_APP_STACK_TOP    0x1000000 /* 16MB */
 
+#ifndef DEFAULT_HEAP_SIZE
+#define DEFAULT_HEAP_SIZE       (4 * PAGE_SIZE)
+#endif
+
 #define PAGE_MASK               (PAGE_SIZE - 1)
 
 static u_int trusty_next_app_id;
@@ -218,7 +222,7 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
     ASSERT(shdr->sh_size >= sizeof(uuid_t));
 
     /* init default config options before parsing manifest */
-    trusty_app->props.min_heap_size = 4 * PAGE_SIZE;
+    trusty_app->props.min_heap_size = DEFAULT_HEAP_SIZE;
     trusty_app->props.min_stack_size = DEFAULT_STACK_SIZE;
 
     manifest_data = (char *)(trusty_app_image_addr + shdr->sh_offset);
