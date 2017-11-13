@@ -137,9 +137,13 @@ SECTIONS
   {
     PROVIDE_HIDDEN (__init_array_start = .);
     KEEP (*crtbegin*.o(.init_array))
+    KEEP (*crtbegin*.o(.ctors))
     KEEP (*(SORT(.init_array.*)))
+    KEEP (*(SORT(.ctors.*)))
     KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .init_array))
+    KEEP (*(EXCLUDE_FILE (*crtend.o *crtend?.o ) .ctors))
     KEEP (*(.init_array))
+    KEEP (*(.ctors))
     PROVIDE_HIDDEN (__init_array_end = .);
   }
   .fini_array     :
