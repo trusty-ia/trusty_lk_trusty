@@ -92,18 +92,4 @@ static inline uthread_t *uthread_get_current(void)
 {
 	return (uthread_t *)tls_get(TLS_ENTRY_UTHREAD);
 }
-
-#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
-/* Translate virtual address to physical address */
-status_t uthread_virt_to_phys(uthread_t *ut, vaddr_t vaddr, paddr_t *paddr);
-
-/* Grant pages from current context into target uthread */
-status_t uthread_grant_pages(uthread_t *ut_target, ext_vaddr_t vaddr_src,
-		size_t size, u_int flags, vaddr_t *vaddr_target, bool ns_src,
-		uint64_t *ns_page_list);
-
-/* Revoke mappings from a previous grant */
-status_t uthread_revoke_pages(uthread_t *ut, vaddr_t vaddr, size_t size);
-#endif
-
 #endif /* __UTHREAD_H */
