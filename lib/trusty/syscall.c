@@ -203,8 +203,6 @@ long sys_munmap(user_addr_t uaddr, uint32_t size)
 	return vmm_free_region_etc(trusty_app->ut->aspace, uaddr, size, 0);
 }
 
-#if UTHREAD_WITH_MEMORY_MAPPING_SUPPORT
-
 long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
 		user_addr_t pmem)
 {
@@ -263,18 +261,3 @@ long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
 
 	return NO_ERROR;
 }
-
-#else /* !UTHREAD_WITH_MEMORY_MAPPING_SUPPORT */
-
-long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,
-		user_addr_t pmem)
-{
-	return ERR_NOT_SUPPORTED;
-}
-
-long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
-{
-	return ERR_NOT_SUPPORTED;
-}
-
-#endif
