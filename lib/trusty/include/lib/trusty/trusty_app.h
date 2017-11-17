@@ -67,8 +67,6 @@ typedef struct trusty_app
 void trusty_app_init(void);
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
 		u_int mmio_id, vaddr_t *vaddr, uint32_t size);
-status_t trusty_app_io_map(trusty_app_t *trusty_app, uint32_t io_addr,
-		vaddr_t *vaddr, uint32_t map_size);
 trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid);
 void trusty_app_forall(void (*fn)(trusty_app_t *ta, void *data), void *data);
 

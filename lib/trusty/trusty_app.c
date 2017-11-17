@@ -567,16 +567,6 @@ static void trusty_app_bootloader(void)
 	}
 }
 
-status_t trusty_app_io_map(trusty_app_t *trusty_app, uint32_t io_addr,
-		vaddr_t *vaddr, uint32_t map_size)
-{
-	map_size = ROUNDUP(map_size, PAGE_SIZE);
-
-	return uthread_map_contig(trusty_app->ut, vaddr, io_addr,
-						map_size, UTM_W | UTM_R | UTM_IO,
-						UT_MAP_ALIGN_4KB);
-}
-
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 		vaddr_t *vaddr, uint32_t map_size)
 {

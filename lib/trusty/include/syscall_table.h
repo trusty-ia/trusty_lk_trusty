@@ -37,7 +37,7 @@ DEF_SYSCALL(0x8, mmap, long, 4, void* uaddr, uint32_t size, uint32_t flags, uint
 DEF_SYSCALL(0x9, munmap, long, 2, void* uaddr, uint32_t size)
 DEF_SYSCALL(0xa, prepare_dma, long, 4, void* uaddr, uint32_t size, uint32_t flags, void* pmem)
 DEF_SYSCALL(0xb, finish_dma, long, 3, void* uaddr, uint32_t size, uint32_t flags)
-DEF_SYSCALL(0xa0, get_device_info, long, 2, trusty_device_info_t *info, bool need_seed)
+DEF_SYSCALL(0xa0, get_device_info, long, 2, trusty_device_info_t *info, uint32_t flags)
 
 /* IPC connection establishement syscalls */
 DEF_SYSCALL(0x10, port_create, long, 4, const char *path, uint num_recv_bufs, size_t recv_buf_size, uint32_t flags)
@@ -55,4 +55,3 @@ DEF_SYSCALL(0x20, get_msg, long, 2, uint32_t handle, ipc_msg_info_t *msg_info)
 DEF_SYSCALL(0x21, read_msg, long, 4, uint32_t handle, uint32_t msg_id, uint32_t offset, ipc_msg_t *msg)
 DEF_SYSCALL(0x22, put_msg, long, 2, uint32_t handle, uint32_t msg_id)
 DEF_SYSCALL(0x23, send_msg, long, 2, uint32_t handle, ipc_msg_t *msg)
-DEF_SYSCALL(0x24, get_paddr, long, 2, uint64_t *paddr, void *ptr)
