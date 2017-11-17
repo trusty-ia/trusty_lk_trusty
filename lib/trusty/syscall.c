@@ -172,26 +172,14 @@ long sys_mmap(user_addr_t uaddr, uint32_t size, uint32_t flags, uint32_t handle)
 	long ret;
 
 	/*
-	 * Only allows mapping on IO region specified by handle (id) or io addr(uaddr)
+	 * Only allows mapping on IO region specified by handle (id) and uaddr
+	 * must be 0 for now.
+	 * TBD: Add support in uthread_map to use uaddr as a hint.
 	 */
-	switch(flags) {
-	case MMAP_FLAG_IO_HANDLE:
-		if (uaddr != 0)
-			return ERR_INVALID_ARGS;
-		else
-			ret = trusty_app_setup_mmio(trusty_app, handle, &vaddr, size);
-		break;
-	case MMAP_FLAG_IO_ADDR:
-		if (uaddr == 0)
-			ret = ERR_INVALID_ARGS;
-		else
-			ret = trusty_app_io_map(trusty_app, uaddr, &vaddr, size);
-		break;
-	default:
-		ret = ERR_INVALID_ARGS;
-		break;
-	}
+	if (flags != MMAP_FLAG_IO_HANDLE || uaddr != 0)
+		return ERR_INVALID_ARGS;
 
+	ret = trusty_app_setup_mmio(trusty_app, handle, &vaddr, size);
 	if (ret != NO_ERROR)
 		return ret;
 
@@ -281,21 +269,4 @@ long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
 
 #endif
 
-
-long sys_get_paddr(user_addr_t paddr, user_addr_t uaddr)
-{
-	paddr_t pa;
-	long ret = 0;
-
-	pa = vaddr_to_paddr((void *)uaddr);
-
-	if(pa == (paddr_t)NULL)
-		return ERR_GENERIC;
-
-	ret = copy_to_user(paddr, (void *)&pa, sizeof(uint64_t));
-	if(ret != NO_ERROR)
-		panic("failed (%ld) to get paddr\n", ret);
-
-	return NO_ERROR;
-}
 
