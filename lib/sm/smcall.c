@@ -126,14 +126,16 @@ static long smc_fiq_enter(smc32_args_t *args)
 #if !WITH_LIB_SM_MONITOR
 static long smc_cpu_suspend(smc32_args_t *args)
 {
-	lk_init_level_all(LK_INIT_FLAG_CPU_SUSPEND);
+	lk_init_level_all(args->params[0] ? LK_INIT_FLAG_CPU_OFF :
+	                                    LK_INIT_FLAG_CPU_ENTER_IDLE);
 
 	return 0;
 }
 
 static long smc_cpu_resume(smc32_args_t *args)
 {
-	lk_init_level_all(LK_INIT_FLAG_CPU_RESUME);
+	lk_init_level_all(args->params[0] ? LK_INIT_FLAG_CPU_ON:
+	                                    LK_INIT_FLAG_CPU_EXIT_IDLE);
 
 	return 0;
 }
