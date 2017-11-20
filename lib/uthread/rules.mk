@@ -32,9 +32,6 @@ GLOBAL_INCLUDES += \
 
 MODULE_DEPS += kernel
 
-MODULE_SRCS += \
-	$(LOCAL_DIR)/uthread.c
-
 include $(LOCAL_DIR)/arch/$(ARCH)/rules.mk
 
 include make/module.mk

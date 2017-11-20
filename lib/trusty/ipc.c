@@ -296,8 +296,7 @@ int ipc_port_publish(handle_t *phandle)
 long __SYSCALL sys_port_create(user_addr_t path, uint32_t num_recv_bufs,
                                uint32_t recv_buf_size, uint32_t flags)
 {
-	uthread_t *ut = uthread_get_current();
-	trusty_app_t *tapp = ut->private_data;
+	trusty_app_t *tapp = current_trusty_app();
 	uctx_t *ctx = current_uctx();
 	handle_t *port_handle = NULL;
 	int ret;
@@ -752,8 +751,7 @@ err_find_ports:
 
 long __SYSCALL sys_connect(user_addr_t path, uint32_t flags)
 {
-	uthread_t *ut = uthread_get_current();
-	trusty_app_t *tapp = ut->private_data;
+	trusty_app_t *tapp = current_trusty_app();
 	uctx_t *ctx = current_uctx();
 	handle_t *chandle;
 	char tmp_path[IPC_PORT_PATH_MAX];

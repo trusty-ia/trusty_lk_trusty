@@ -132,6 +132,83 @@ int trusty_als_alloc_slot(void)
     return ret;
 }
 
+static int trusty_thread_startup(void *arg)
+{
+    struct trusty_thread *trusty_thread = current_trusty_thread();
+
+    vmm_set_active_aspace(trusty_thread->app->aspace);
+
+    arch_enter_uspace(trusty_thread->entry,
+                      ROUNDDOWN(trusty_thread->stack_start, 8),
+                      ARCH_ENTER_USPACE_FLAG_32BIT, 0);
+
+    __UNREACHABLE;
+}
+
+static status_t trusty_thread_start(struct trusty_thread *trusty_thread)
+{
+    DEBUG_ASSERT(trusty_thread && trusty_thread->thread);
+
+    return thread_resume(trusty_thread->thread);
+}
+
+void __NO_RETURN trusty_thread_exit(int retcode)
+{
+    struct trusty_thread *trusty_thread = current_trusty_thread();
+    vaddr_t stack_bot;
+
+    ASSERT(trusty_thread);
+
+    stack_bot = trusty_thread->stack_start - trusty_thread->stack_size;
+
+    vmm_free_region(trusty_thread->app->aspace, stack_bot);
+    free(trusty_thread);
+
+    thread_exit(retcode);
+}
+
+static struct trusty_thread *
+trusty_thread_create(const char *name, vaddr_t entry, int priority,
+                     vaddr_t stack_start, size_t stack_size,
+                     trusty_app_t *trusty_app)
+{
+    struct trusty_thread *trusty_thread;
+    status_t err;
+    vaddr_t stack_bot = stack_start - stack_size;
+
+    trusty_thread = calloc(1, sizeof(struct trusty_thread));
+    if (!trusty_thread)
+        return NULL;
+
+    err = vmm_alloc(trusty_app->aspace, "stack", stack_size,
+                    (void **)&stack_bot, PAGE_SIZE_SHIFT,
+                    VMM_FLAG_VALLOC_SPECIFIC,
+                    ARCH_MMU_FLAG_PERM_USER | ARCH_MMU_FLAG_PERM_NO_EXECUTE);
+
+    if (err != NO_ERROR)
+        goto err_stack;
+
+    ASSERT(stack_bot == stack_start - stack_size);
+
+    trusty_thread->thread = thread_create(name, trusty_thread_startup, NULL,
+                                          priority, DEFAULT_STACK_SIZE);
+    if (!trusty_thread->thread)
+        goto err_thread;
+
+    trusty_thread->app = trusty_app;
+    trusty_thread->entry = entry;
+    trusty_thread->stack_start = stack_start;
+    trusty_thread->stack_size = stack_size;
+    trusty_thread->thread->tls[TLS_ENTRY_TRUSTY] = (uintptr_t)trusty_thread;
+
+    return trusty_thread;
+
+err_thread:
+    vmm_free_region(trusty_app->aspace, stack_bot);
+err_stack:
+    free(trusty_thread);
+    return NULL;
+}
 
 static void load_app_config_options(intptr_t trusty_app_image_addr,
                                     trusty_app_t *trusty_app, Elf32_Shdr *shdr)
@@ -229,7 +306,7 @@ static status_t init_brk(trusty_app_t *trusty_app)
         return NO_ERROR;
 
     vaddr = trusty_app->end_brk;
-    status = vmm_alloc(trusty_app->ut->aspace, "heap",
+    status = vmm_alloc(trusty_app->aspace, "heap",
                        trusty_app->props.min_heap_size, (void**)&vaddr,
                        PAGE_SIZE_SHIFT, VMM_FLAG_VALLOC_SPECIFIC,
                        ARCH_MMU_FLAG_PERM_USER | ARCH_MMU_FLAG_PERM_NO_EXECUTE);
@@ -301,7 +378,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
             arch_mmu_flags += ARCH_MMU_FLAG_PERM_NO_EXECUTE;
         }
 
-        ret = vmm_alloc_physical(trusty_app->ut->aspace, "elfseg", size,
+        ret = vmm_alloc_physical(trusty_app->aspace, "elfseg", size,
                                  (void **)&vaddr, PAGE_SIZE_SHIFT,
                                  paddr, VMM_FLAG_VALLOC_SPECIFIC,
                                  arch_mmu_flags);
@@ -378,7 +455,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
     dprintf(SPEW, "trusty_app %d: brk:  start 0x%08lx end 0x%08lx\n",
             trusty_app_idx, trusty_app->start_brk, trusty_app->end_brk);
     dprintf(SPEW, "trusty_app %d: entry 0x%08lx\n", trusty_app_idx,
-            trusty_app->ut->entry);
+            trusty_app->thread->entry);
 
     return NO_ERROR;
 }
@@ -549,7 +626,7 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
             map_size = ROUNDUP(map_size, PAGE_SIZE);
             if (map_size > size)
                 return ERR_INVALID_ARGS;
-            ret = vmm_alloc_physical(trusty_app->ut->aspace, "mmio",
+            ret = vmm_alloc_physical(trusty_app->aspace, "mmio",
                                      map_size, (void **)vaddr,
                                      PAGE_SIZE_SHIFT, offset,
                                      0,
@@ -585,7 +662,7 @@ void trusty_app_init(void)
     for (i = 0, trusty_app = trusty_app_list; i < trusty_app_count;
          i++, trusty_app++) {
         char name[32];
-        uthread_t *uthread;
+        struct trusty_thread *trusty_thread;
         int ret;
 
         snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x", i,
@@ -593,17 +670,24 @@ void trusty_app_init(void)
                  trusty_app->props.uuid.time_mid,
                  trusty_app->props.uuid.time_hi_and_version);
 
+        ret = vmm_create_aspace(&trusty_app->aspace, name, 0);
+        if (ret != NO_ERROR) {
+            panic("Failed to allocate address space for %s\n", name);
+        }
+
         /* entry is 0 at this point since we haven't parsed the elf hdrs
          * yet */
         Elf32_Ehdr *elf_hdr = trusty_app->app_img;
-        uthread = uthread_create(name, elf_hdr->e_entry,
-                                 DEFAULT_PRIORITY, TRUSTY_APP_STACK_TOP,
-                                 trusty_app->props.min_stack_size, trusty_app);
-        if (uthread == NULL) {
+        trusty_thread = trusty_thread_create(name, elf_hdr->e_entry,
+                                             DEFAULT_PRIORITY,
+                                             TRUSTY_APP_STACK_TOP,
+                                             trusty_app->props.min_stack_size,
+                                             trusty_app);
+        if (trusty_thread == NULL) {
             /* TODO: do better than this */
             panic("allocate user thread failed\n");
         }
-        trusty_app->ut = uthread;
+        trusty_app->thread = trusty_thread;
 
         ret = alloc_address_map(trusty_app);
         if (ret != NO_ERROR) {
@@ -663,8 +747,8 @@ static void start_apps(uint level)
 
     for (i = 0, trusty_app = trusty_app_list; i < trusty_app_count;
          i++, trusty_app++) {
-        if (trusty_app->ut->entry) {
-            ret = uthread_start(trusty_app->ut);
+        if (trusty_app->thread->entry) {
+            ret = trusty_thread_start(trusty_app->thread);
             if (ret)
                 panic("Cannot start Trusty app!\n");
         }

@@ -100,8 +100,7 @@ LK_INIT_HOOK(uctx, uctx_init, LK_INIT_LEVEL_APPS - 2);
  */
 uctx_t *current_uctx(void)
 {
-	uthread_t *ut = uthread_get_current();
-	trusty_app_t *tapp = ut->private_data;
+	trusty_app_t *tapp = current_trusty_app();
 	return trusty_als_get(tapp, _uctx_slot_id);
 }
 
@@ -288,7 +287,7 @@ long __SYSCALL sys_wait(uint32_t handle_id, user_addr_t user_event,
 	uevent_t tmp_event;
 	int ret;
 
-	LTRACEF("[%p][%d]: %d msec\n", uthread_get_current(),
+	LTRACEF("[%p][%d]: %d msec\n", current_trusty_thread(),
 	                               handle_id, timeout_msecs);
 
 	ret = uctx_handle_get(ctx, handle_id, &handle);
@@ -318,7 +317,7 @@ out:
 	/* drop handle_ref grabed by uctx_handle_get */
 	handle_decref(handle);
 
-	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
+	LTRACEF("[%p][%d]: ret = %d\n", current_trusty_thread(),
 	                                handle_id, ret);
 	return ret;
 }
@@ -333,7 +332,7 @@ long __SYSCALL sys_wait_any(user_addr_t user_event, uint32_t timeout_msecs)
 	uevent_t tmp_event;
 	int ret;
 
-	LTRACEF("[%p]: %d msec\n", uthread_get_current(),
+	LTRACEF("[%p]: %d msec\n", current_trusty_thread(),
 	                           timeout_msecs);
 
 	/*
@@ -364,7 +363,7 @@ long __SYSCALL sys_wait_any(user_addr_t user_event, uint32_t timeout_msecs)
 		ret = status;
 	}
 out:
-	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
+	LTRACEF("[%p][%d]: ret = %d\n", current_trusty_thread(),
 	                                tmp_event.handle, ret);
 	return ret;
 }
@@ -373,7 +372,7 @@ long __SYSCALL sys_close(uint32_t handle_id)
 {
 	handle_t *handle;
 
-	LTRACEF("[%p][%d]\n", uthread_get_current(),
+	LTRACEF("[%p][%d]\n", current_trusty_thread(),
 	                      handle_id);
 
 	int ret = uctx_handle_remove(current_uctx(), handle_id, &handle);
@@ -388,7 +387,7 @@ long __SYSCALL sys_set_cookie(uint32_t handle_id, user_addr_t cookie)
 {
 	handle_t *handle;
 
-	LTRACEF("[%p][%d]: cookie = 0x%08x\n", uthread_get_current(),
+	LTRACEF("[%p][%d]: cookie = 0x%08x\n", current_trusty_thread(),
 	                              handle_id, (uint) cookie);
 
 	int ret = uctx_handle_get(current_uctx(), handle_id, &handle);

@@ -80,7 +80,18 @@ static const struct sys_fd_ops *get_sys_fd_handler(uint32_t fd)
 
 static bool valid_address(vaddr_t addr, u_int size)
 {
-	return uthread_is_valid_range(uthread_get_current(), addr, size);
+	size = ROUNDUP(size + (addr & (PAGE_SIZE - 1)), PAGE_SIZE);
+	addr = ROUNDDOWN(addr, PAGE_SIZE);
+
+	while (size) {
+		if (!is_user_address(addr) || !vaddr_to_paddr((void*)addr)) {
+			return false;
+		}
+		addr += PAGE_SIZE;
+		size -= PAGE_SIZE;
+	}
+
+	return true;
 }
 
 /* handle stdout/stderr */
@@ -114,7 +125,7 @@ long sys_write(uint32_t fd, user_addr_t user_ptr, uint32_t size)
 
 long sys_brk(u_int brk)
 {
-	trusty_app_t *trusty_app = uthread_get_current()->private_data;
+	trusty_app_t *trusty_app = current_trusty_app();
 
 	/* update brk, if within range */
 	if ((brk >= trusty_app->start_brk) && (brk <= trusty_app->end_brk)) {
@@ -128,7 +139,7 @@ long sys_exit_group(void)
 	thread_t *current = get_current_thread();
 	dprintf(CRITICAL, "exit called, thread %p, name %s\n",
 		current, current->name);
-	uthread_exit(0);
+	trusty_thread_exit(0);
 	return 0L;
 }
 
@@ -173,7 +184,7 @@ long sys_gettime(uint32_t clock_id, uint32_t flags, user_addr_t time)
 
 long sys_mmap(user_addr_t uaddr, uint32_t size, uint32_t flags, uint32_t handle)
 {
-	trusty_app_t *trusty_app = uthread_get_current()->private_data;
+	trusty_app_t *trusty_app = current_trusty_app();
 	vaddr_t vaddr;
 	long ret;
 
@@ -194,13 +205,13 @@ long sys_mmap(user_addr_t uaddr, uint32_t size, uint32_t flags, uint32_t handle)
 
 long sys_munmap(user_addr_t uaddr, uint32_t size)
 {
-	trusty_app_t *trusty_app = uthread_get_current()->private_data;
+	trusty_app_t *trusty_app = current_trusty_app();
 
 	/*
 	 * vmm_free_region always unmaps whole region.
 	 * TBD: Add support to unmap partial region when there's use case.
 	 */
-	return vmm_free_region_etc(trusty_app->ut->aspace, uaddr, size, 0);
+	return vmm_free_region_etc(trusty_app->aspace, uaddr, size, 0);
 }
 
 long sys_prepare_dma(user_addr_t uaddr, uint32_t size, uint32_t flags,

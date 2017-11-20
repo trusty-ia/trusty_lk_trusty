@@ -42,20 +42,27 @@ typedef struct
     uint32_t    *config_blob;
 } trusty_app_props_t;
 
+typedef struct trusty_app trusty_app_t;
+
+struct trusty_thread
+{
+    vaddr_t stack_start;
+    size_t stack_size;
+    vaddr_t entry;
+    thread_t *thread;
+    trusty_app_t *app;
+};
+
 typedef struct trusty_app
 {
+    vmm_aspace_t *aspace;
     vaddr_t end_bss;
-
     vaddr_t start_brk;
     vaddr_t cur_brk;
     vaddr_t end_brk;
-
     trusty_app_props_t props;
-
     void *app_img;
-
-    uthread_t *ut;
-
+    struct trusty_thread *thread;
     /* app local storage */
     void **als;
 } trusty_app_t;
@@ -65,6 +72,7 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
                                u_int mmio_id, vaddr_t *vaddr, uint32_t size);
 trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid);
 void trusty_app_forall(void (*fn)(trusty_app_t *ta, void *data), void *data);
+void trusty_thread_exit(int status);
 
 typedef struct trusty_app_notifier
 {
@@ -102,6 +110,16 @@ static inline void trusty_als_set(struct trusty_app *app, int slot_id,
     uint slot = slot_id - 1;
     ASSERT(slot < als_slot_cnt);
     app->als[slot] = ptr;
+}
+
+static inline struct trusty_thread *current_trusty_thread()
+{
+    return (struct trusty_thread *)tls_get(TLS_ENTRY_TRUSTY);
+}
+
+static inline trusty_app_t *current_trusty_app()
+{
+    return current_trusty_thread()->app;
 }
 
 #endif

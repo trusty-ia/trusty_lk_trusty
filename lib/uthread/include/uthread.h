@@ -34,38 +34,6 @@
 #include <kernel/vm.h>
 #endif
 
-typedef struct uthread
-{
-	vaddr_t start_stack;
-
-	vaddr_t entry;
-
-	vmm_aspace_t *aspace;
-
-	thread_t *thread;
-	void *private_data;
-} uthread_t;
-
-/* uthread_grant_pages flags */
-enum
-{
-	UTM_R		= 1 << 0,
-	UTM_W		= 1 << 1,
-};
-
-/* Create a new user thread */
-uthread_t *uthread_create(const char *name, vaddr_t entry, int priority,
-		vaddr_t stack_top, size_t stack_size, void *private_data);
-
-/* Start the user thread */
-status_t uthread_start(uthread_t *ut);
-
-/* Exit current uthread */
-void uthread_exit(int retcode) __NO_RETURN;
-
-/* Check if the given user address range has a valid mapping */
-bool uthread_is_valid_range(uthread_t *ut, vaddr_t vaddr, size_t size);
-
 static inline status_t copy_from_user(void *kdest, user_addr_t usrc, size_t len)
 {
 	return arch_copy_from_user(kdest, usrc, len);
@@ -88,8 +56,4 @@ static inline ssize_t  strlcpy_from_user(char *kdest, user_addr_t usrc, size_t l
 	return arch_strlcpy_from_user(kdest, usrc, len);
 }
 
-static inline uthread_t *uthread_get_current(void)
-{
-	return (uthread_t *)tls_get(TLS_ENTRY_UTHREAD);
-}
 #endif /* __UTHREAD_H */
