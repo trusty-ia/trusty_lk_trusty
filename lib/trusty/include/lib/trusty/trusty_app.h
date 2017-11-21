@@ -34,43 +34,43 @@
 
 typedef struct
 {
-	uuid_t		uuid;
-	uint32_t	min_stack_size;
-	uint32_t	min_heap_size;
-	uint32_t	map_io_mem_cnt;
-	uint32_t	config_entry_cnt;
-	uint32_t	*config_blob;
+    uuid_t      uuid;
+    uint32_t    min_stack_size;
+    uint32_t    min_heap_size;
+    uint32_t    map_io_mem_cnt;
+    uint32_t    config_entry_cnt;
+    uint32_t    *config_blob;
 } trusty_app_props_t;
 
 typedef struct trusty_app
 {
-	vaddr_t end_bss;
+    vaddr_t end_bss;
 
-	vaddr_t start_brk;
-	vaddr_t cur_brk;
-	vaddr_t end_brk;
+    vaddr_t start_brk;
+    vaddr_t cur_brk;
+    vaddr_t end_brk;
 
-	trusty_app_props_t props;
+    trusty_app_props_t props;
 
-	void *app_img;
+    void *app_img;
 
-	uthread_t *ut;
+    uthread_t *ut;
 
-	/* app local storage */
-	void **als;
+    /* app local storage */
+    void **als;
 } trusty_app_t;
 
 void trusty_app_init(void);
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
-		u_int mmio_id, vaddr_t *vaddr, uint32_t size);
+                               u_int mmio_id, vaddr_t *vaddr, uint32_t size);
 trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid);
 void trusty_app_forall(void (*fn)(trusty_app_t *ta, void *data), void *data);
 
 typedef struct trusty_app_notifier
 {
-	struct list_node node;
-	status_t (*startup)(trusty_app_t *app);
-	status_t (*shutdown)(trusty_app_t *app);
+    struct list_node node;
+    status_t (*startup)(trusty_app_t *app);
+    status_t (*shutdown)(trusty_app_t *app);
 } trusty_app_notifier_t;
 
 
@@ -91,16 +91,17 @@ extern uint als_slot_cnt;
 
 static inline void *trusty_als_get(struct trusty_app *app, int slot_id)
 {
-	uint slot = slot_id - 1;
-	ASSERT(slot < als_slot_cnt);
-	return app->als[slot];
+    uint slot = slot_id - 1;
+    ASSERT(slot < als_slot_cnt);
+    return app->als[slot];
 }
 
-static inline void trusty_als_set(struct trusty_app *app, int slot_id, void *ptr)
+static inline void trusty_als_set(struct trusty_app *app, int slot_id,
+                                  void *ptr)
 {
-	uint slot = slot_id - 1;
-	ASSERT(slot < als_slot_cnt);
-	app->als[slot] = ptr;
+    uint slot = slot_id - 1;
+    ASSERT(slot < als_slot_cnt);
+    app->als[slot] = ptr;
 }
 
 #endif
