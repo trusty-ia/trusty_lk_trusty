@@ -24,10 +24,10 @@
 #ifndef __LIB_TRUSTY_IPC_MSG_H
 #define __LIB_TRUSTY_IPC_MSG_H
 
+#include <kernel/usercopy.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
-#include <uthread.h>
 
 #include <lib/trusty/uctx.h>
 #include <lib/trusty/uio.h>

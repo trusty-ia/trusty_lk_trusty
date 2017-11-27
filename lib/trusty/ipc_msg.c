@@ -39,6 +39,7 @@
 
 #include <assert.h>
 #include <err.h>
+#include <kernel/usercopy.h>
 #include <list.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -46,7 +47,6 @@
 #include <string.h>
 #include <sys/types.h>
 #include <trace.h>
-#include <uthread.h>
 
 #include <lib/syscall.h>
 

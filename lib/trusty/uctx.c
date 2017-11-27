@@ -26,13 +26,13 @@
 #include <assert.h>
 #include <bits.h>
 #include <err.h>
+#include <kernel/usercopy.h>
 #include <list.h> // for containerof
 #include <platform.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <trace.h>
-#include <uthread.h>
 
 #include <kernel/event.h>
 #include <kernel/thread.h>

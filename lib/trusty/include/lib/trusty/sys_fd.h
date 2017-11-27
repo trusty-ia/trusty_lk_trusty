@@ -22,8 +22,8 @@
  */
 #pragma once
 
+#include <kernel/usercopy.h>
 #include <sys/types.h>
-#include <uthread.h>
 
 #define MAX_SYS_FD_HADLERS 10
 

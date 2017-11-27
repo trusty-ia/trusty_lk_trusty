@@ -24,8 +24,8 @@
 #ifndef __LIB_TRUSTY_UIO_H
 #define __LIB_TRUSTY_UIO_H
 
+#include <kernel/usercopy.h>
 #include <sys/types.h>
-#include <uthread.h>
 
 typedef struct iovec_kern {
 	void		*base;

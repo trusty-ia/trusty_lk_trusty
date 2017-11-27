@@ -26,6 +26,7 @@
 #include <debug.h>
 #include <err.h>
 #include <kernel/thread.h>
+#include <kernel/usercopy.h>
 #include <kernel/mutex.h>
 #include <uapi/mm.h>
 #include <stdlib.h>
@@ -33,7 +34,6 @@
 #include <trace.h>
 
 #include <platform.h>
-#include <uthread.h>
 #include <lib/trusty/sys_fd.h>
 #include <lib/trusty/trusty_app.h>
 
@@ -191,7 +191,7 @@ long sys_mmap(user_addr_t uaddr, uint32_t size, uint32_t flags, uint32_t handle)
 	/*
 	 * Only allows mapping on IO region specified by handle (id) and uaddr
 	 * must be 0 for now.
-	 * TBD: Add support in uthread_map to use uaddr as a hint.
+	 * TBD: Add support in to use uaddr as a hint.
 	 */
 	if (flags != MMAP_FLAG_IO_HANDLE || uaddr != 0)
 		return ERR_INVALID_ARGS;

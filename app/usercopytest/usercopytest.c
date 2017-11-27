@@ -22,10 +22,10 @@
  */
 
 #include <assert.h>
+#include <kernel/usercopy.h>
 #include <lk/init.h>
 #include <stdio.h>
 #include <string.h>
-#include <uthread.h>
 
 static void usercopy_test(uint level)
 {

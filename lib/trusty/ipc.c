@@ -25,11 +25,11 @@
 
 #include <assert.h>
 #include <err.h>
+#include <kernel/usercopy.h>
 #include <list.h>
 #include <stdlib.h>
 #include <string.h>
 #include <trace.h>
-#include <uthread.h>
 #include <platform.h>
 
 #include <lk/init.h>
@@ -304,7 +304,7 @@ long __SYSCALL sys_port_create(user_addr_t path, uint32_t num_recv_bufs,
 	char tmp_path[IPC_PORT_PATH_MAX];
 
 	/* copy path from user space */
-	ret = (int) strncpy_from_user(tmp_path, path, sizeof(tmp_path));
+	ret = (int) strlcpy_from_user(tmp_path, path, sizeof(tmp_path));
 	if (ret < 0)
 		return (long) ret;
 
@@ -763,7 +763,7 @@ long __SYSCALL sys_connect(user_addr_t path, uint32_t flags)
 		return ERR_INVALID_ARGS;
 	}
 
-	ret = (int) strncpy_from_user(tmp_path, path, sizeof(tmp_path));
+	ret = (int) strlcpy_from_user(tmp_path, path, sizeof(tmp_path));
 	if (ret < 0)
 		return (long) ret;
 

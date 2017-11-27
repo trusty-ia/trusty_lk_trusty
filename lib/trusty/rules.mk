@@ -58,7 +58,6 @@ GLOBAL_INCLUDES += \
 	$(LOCAL_DIR)/include \
 
 MODULE_DEPS += \
-	lib/uthread \
 	lib/syscall \
 	lib/version \
 
