@@ -38,7 +38,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <uthread.h>
 #include <lk/init.h>
 
 #include <lib/trusty/trusty_app.h>

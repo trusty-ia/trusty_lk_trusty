@@ -28,8 +28,8 @@
 #include <assert.h>
 #include <list.h>
 #include <sys/types.h>
-#include <uthread.h>
-
+#include <kernel/thread.h>
+#include <kernel/vm.h>
 #include <lib/trusty/uuid.h>
 
 typedef struct
