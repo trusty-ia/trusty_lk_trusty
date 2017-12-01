@@ -40,7 +40,9 @@ FUNCTION(sm_sched_nonsecure)
 	bl	platform_ns_return
 #else
 	ldr	r0, =SMC_SC_NS_RETURN
+	push	{r4-r7}
 	smc	#0
+	pop	{r4-r7}
 #endif
 
 	tst	r0, #(1 << 30)		/* Check calling convention */
