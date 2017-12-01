@@ -73,12 +73,11 @@ typedef struct trusty_app_manifest {
 static u_int trusty_next_app_id;
 static struct list_node trusty_app_list = LIST_INITIAL_VALUE(trusty_app_list);
 
-static char *trusty_app_image_start;
-static char *trusty_app_image_end;
-static u_int trusty_app_image_size;
-
-extern intptr_t __trusty_app_start;
-extern intptr_t __trusty_app_end;
+/* These symbols are linker defined and are declared as unsized arrays to prevent
+ * compiler(clang) optimizations that break when the list is empty and the symbols alias
+ */
+extern struct trusty_app_img __trusty_app_list_start[];
+extern struct trusty_app_img __trusty_app_list_end[];
 
 static bool apps_started;
 static mutex_t apps_lock = MUTEX_INITIAL_VALUE(apps_lock);
@@ -319,7 +318,7 @@ static status_t init_brk(trusty_app_t *trusty_app)
 
 static status_t alloc_address_map(trusty_app_t *trusty_app)
 {
-    Elf32_Ehdr *elf_hdr = trusty_app->app_img;
+    Elf32_Ehdr *elf_hdr = (Elf32_Ehdr *)trusty_app->app_img->img_start;
     void *trusty_app_image;
     Elf32_Phdr *prg_hdr;
     u_int i;
@@ -328,8 +327,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
     vaddr_t start_data = 0;
     vaddr_t end_code = 0;
     vaddr_t end_data = 0;
-
-    trusty_app_image = trusty_app->app_img;
+    trusty_app_image = (void *)trusty_app->app_img->img_start;
 
     /* create mappings for PT_LOAD sections */
     for (i = 0; i < elf_hdr->e_phnum; i++) {
@@ -450,147 +448,74 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 }
 
 /*
- * Align the next trusty_app to a page boundary, by copying what remains
- * in the trusty_app image to the aligned next trusty_app start. This should be
- * called after we're done with the section headers as the previous
- * trusty_apps .shstrtab section will be clobbered.
- *
- * Note: trusty_app_image_size remains the carved out part in LK to exit
- * the bootloader loop, so still increment by max_extent. Because of
- * the copy down to an aligned next trusty_app addr, trusty_app_image_size is
- * more than what we're actually using.
+ * Create a trusty_app from its memory image and add it to the global list of
+ * apps
  */
-static char *align_next_app(Elf32_Ehdr *elf_hdr, Elf32_Shdr *pad_hdr,
-                            u_int max_extent)
-{
-    char *next_trusty_app_align_start;
-    char *next_trusty_app_fsize_start;
-    char *trusty_app_image_addr;
-    u_int copy_size;
-
-    ASSERT(ROUNDUP(max_extent, 4) == elf_hdr->e_shoff);
-    ASSERT(pad_hdr);
-
-    trusty_app_image_addr = (char *)elf_hdr;
-    max_extent = (elf_hdr->e_shoff + (elf_hdr->e_shnum *
-                                      elf_hdr->e_shentsize)) - 1;
-    ASSERT((trusty_app_image_addr + max_extent + 1) <= trusty_app_image_end);
-
-    next_trusty_app_align_start = trusty_app_image_addr + pad_hdr->sh_offset +
-                                  pad_hdr->sh_size;
-    next_trusty_app_fsize_start = trusty_app_image_addr + max_extent + 1;
-    ASSERT(next_trusty_app_align_start <= next_trusty_app_fsize_start);
-
-    copy_size = trusty_app_image_end - next_trusty_app_fsize_start;
-    if (copy_size) {
-        /*
-         * Copy remaining image bytes to aligned start for the next
-         * (and subsequent) trusty_apps. Also decrement trusty_app_image_end, so
-         * we copy less each time we realign for the next trusty_app.
-         */
-        memcpy(next_trusty_app_align_start, next_trusty_app_fsize_start,
-               copy_size);
-        arch_sync_cache_range((addr_t)next_trusty_app_align_start, copy_size);
-        trusty_app_image_end -= (next_trusty_app_fsize_start -
-                                 next_trusty_app_align_start);
-    }
-
-    trusty_app_image_size -= (max_extent + 1);
-    return next_trusty_app_align_start;
-}
-
-/*
- * Look in the kernel's ELF header for trusty_app sections and
- * carveout memory for their LOAD-able sections.
- */
-static void trusty_app_bootloader(void)
+static status_t trusty_app_create(struct trusty_app_img *app_img)
 {
     Elf32_Ehdr *ehdr;
     Elf32_Shdr *shdr;
-    Elf32_Shdr *bss_shdr, *bss_pad_shdr, *manifest_shdr;
-    char *shstbl, *trusty_app_image_addr;
-    trusty_app_t *trusty_app = 0;
+    Elf32_Shdr *bss_shdr, *manifest_shdr;
+    char *shstbl;
+    trusty_app_t *trusty_app;
+    u_int i;
 
-    dprintf(SPEW, "trusty_app: start %p size 0x%08x end %p\n",
-            trusty_app_image_start, trusty_app_image_size,
-            trusty_app_image_end);
+    ASSERT(!(app_img->img_start & PAGE_MASK));
+    ASSERT(!(app_img->img_end & PAGE_MASK));
 
-    trusty_app_image_addr = trusty_app_image_start;
+    dprintf(SPEW, "trusty_app: start %p size 0x%08lx end %p\n",
+            (void *)app_img->img_start,
+            app_img->img_end - app_img->img_start,
+            (void *)app_img->img_end);
 
-    while (trusty_app_image_size > 0) {
-        u_int i, trusty_app_max_extent;
-
-        trusty_app = (trusty_app_t *) calloc(1, sizeof(trusty_app_t));
-        if (!trusty_app) {
-            dprintf(CRITICAL,
-                    "trusty_app: failed to allocate memory for trusty app\n");
-            break;
-        }
-
-        trusty_app->app_id = trusty_next_app_id++;
-
-        ehdr = (Elf32_Ehdr *) trusty_app_image_addr;
-        if (strncmp((char *)ehdr->e_ident, ELFMAG, SELFMAG)) {
-            dprintf(CRITICAL, "trusty_app_bootloader: ELF header not found\n");
-            break;
-        }
-
-        shdr = (Elf32_Shdr *) ((intptr_t)ehdr + ehdr->e_shoff);
-        shstbl = (char *)((intptr_t)ehdr + shdr[ehdr->e_shstrndx].sh_offset);
-
-        trusty_app_max_extent = 0;
-        bss_shdr = bss_pad_shdr = manifest_shdr = NULL;
-
-        /* calculate trusty_app end */
-        for (i = 0; i < ehdr->e_shnum; i++) {
-            u_int extent;
-
-            if (shdr[i].sh_type == SHT_NULL)
-                continue;
-
-            LTRACEF("trusty_app: sect %d, off 0x%08x, size 0x%08x, flags 0x%02x, name %s\n",
-                    i, shdr[i].sh_offset, shdr[i].sh_size, shdr[i].sh_flags,
-                    shstbl + shdr[i].sh_name);
-
-            /* track bss and manifest sections */
-            if (!strcmp((shstbl + shdr[i].sh_name), ".bss")) {
-                bss_shdr = shdr + i;
-                trusty_app->end_bss = bss_shdr->sh_addr + bss_shdr->sh_size;
-            }
-            else if (!strcmp((shstbl + shdr[i].sh_name), ".bss-pad")) {
-                bss_pad_shdr = shdr + i;
-            }
-            else if (!strcmp((shstbl + shdr[i].sh_name),
-                             ".trusty_app.manifest")) {
-                manifest_shdr = shdr + i;
-            }
-
-            if (shdr[i].sh_type != SHT_NOBITS) {
-                extent = shdr[i].sh_offset + shdr[i].sh_size;
-                if (trusty_app_max_extent < extent)
-                    trusty_app_max_extent = extent;
-            }
-        }
-
-        /* we need these sections */
-        ASSERT(bss_shdr && bss_pad_shdr && manifest_shdr);
-
-        /* clear .bss */
-        ASSERT((bss_shdr->sh_offset + bss_shdr->sh_size) <=
-               trusty_app_max_extent);
-        memset((uint8_t *)trusty_app_image_addr + bss_shdr->sh_offset, 0,
-               bss_shdr->sh_size);
-
-        load_app_config_options((intptr_t)trusty_app_image_addr, trusty_app,
-                                manifest_shdr);
-        trusty_app->app_img = ehdr;
-
-        /* align next trusty_app start */
-        trusty_app_image_addr = align_next_app(ehdr, bss_pad_shdr,
-                                               trusty_app_max_extent);
-
-        list_add_tail(&trusty_app_list, &trusty_app->node);
+    trusty_app = (trusty_app_t *) calloc(1, sizeof(trusty_app_t));
+    if (!trusty_app) {
+        dprintf(CRITICAL, "trusty_app: failed to allocate memory for trusty app\n");
+        return ERR_NO_MEMORY;
     }
+
+    ehdr = (Elf32_Ehdr *)app_img->img_start;
+    if (strncmp((char *)ehdr->e_ident, ELFMAG, SELFMAG)) {
+        dprintf(CRITICAL, "trusty_app_create: ELF header not found\n");
+        free(trusty_app);
+        return  ERR_NOT_VALID;
+    }
+
+    shdr = (Elf32_Shdr *) ((intptr_t)ehdr + ehdr->e_shoff);
+    shstbl = (char *)((intptr_t)ehdr + shdr[ehdr->e_shstrndx].sh_offset);
+    bss_shdr = manifest_shdr = NULL;
+
+    for (i = 0; i < ehdr->e_shnum; i++) {
+
+        if (shdr[i].sh_type == SHT_NULL)
+            continue;
+
+        LTRACEF("trusty_app: sect %d, off 0x%08x, size 0x%08x, flags 0x%02x, name %s\n",
+                i, shdr[i].sh_offset, shdr[i].sh_size, shdr[i].sh_flags,
+                shstbl + shdr[i].sh_name);
+
+        /* track bss and manifest sections */
+        if (!strcmp((shstbl + shdr[i].sh_name), ".bss")) {
+            bss_shdr = shdr + i;
+            trusty_app->end_bss = bss_shdr->sh_addr + bss_shdr->sh_size;
+        }
+        else if (!strcmp((shstbl + shdr[i].sh_name),
+                          ".trusty_app.manifest")) {
+            manifest_shdr = shdr + i;
+        }
+    }
+
+    /* we need these sections */
+    ASSERT(bss_shdr && manifest_shdr);
+
+    trusty_app->app_id = trusty_next_app_id++;
+    trusty_app->app_img = app_img;
+
+    load_app_config_options(app_img->img_start, trusty_app, manifest_shdr);
+
+    list_add_tail(&trusty_app_list, &trusty_app->node);
+
+    return NO_ERROR;
 }
 
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
@@ -635,16 +560,15 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
 void trusty_app_init(void)
 {
     trusty_app_t *trusty_app;
-
-    trusty_app_image_start = (char *)&__trusty_app_start;
-    trusty_app_image_end = (char *)&__trusty_app_end;
-    trusty_app_image_size = (trusty_app_image_end - trusty_app_image_start);
-
-    ASSERT(!((uintptr_t)trusty_app_image_start & PAGE_MASK));
+    struct trusty_app_img *app_img;
 
     finalize_registration();
 
-    trusty_app_bootloader();
+    for (app_img = __trusty_app_list_start;
+         app_img != __trusty_app_list_end; app_img++) {
+        if (trusty_app_create(app_img) != NO_ERROR)
+            panic("Failed to create builtin apps\n");
+    }
 
     list_for_every_entry(&trusty_app_list, trusty_app, trusty_app_t, node) {
         char name[32];
@@ -662,9 +586,7 @@ void trusty_app_init(void)
             panic("Failed to allocate address space for %s\n", name);
         }
 
-        /* entry is 0 at this point since we haven't parsed the elf hdrs
-         * yet */
-        Elf32_Ehdr *elf_hdr = trusty_app->app_img;
+        Elf32_Ehdr *elf_hdr = (Elf32_Ehdr *)trusty_app->app_img->img_start;
         trusty_thread = trusty_thread_create(name, elf_hdr->e_entry,
                                              DEFAULT_PRIORITY,
                                              TRUSTY_APP_STACK_TOP,

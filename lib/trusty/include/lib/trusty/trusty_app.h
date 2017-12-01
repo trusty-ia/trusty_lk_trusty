@@ -42,6 +42,11 @@ typedef struct
     uint32_t    *config_blob;
 } trusty_app_props_t;
 
+struct trusty_app_img {
+    uintptr_t       img_start;
+    uintptr_t       img_end;
+};
+
 typedef struct trusty_app trusty_app_t;
 
 struct trusty_thread
@@ -63,7 +68,7 @@ typedef struct trusty_app
     vaddr_t cur_brk;
     vaddr_t end_brk;
     trusty_app_props_t props;
-    void *app_img;
+    struct trusty_app_img *app_img;
     struct trusty_thread *thread;
     /* app local storage */
     void **als;

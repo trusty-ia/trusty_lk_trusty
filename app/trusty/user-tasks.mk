@@ -41,6 +41,7 @@ $(eval XBIN_ARCH := $(TRUSTY_USER_ARCH))\
 $(eval XBIN_BUILDDIR := $(BUILDDIR)/user_tasks/$(1))\
 $(eval XBIN_LINKER_SCRIPT := $(XBIN_BUILDDIR)/user_task.ld)\
 $(eval XBIN_LDFLAGS := )\
+$(eval XBIN_ALIGNMENT := 4096)\
 $(eval include make/xbin.mk)
 endef
 

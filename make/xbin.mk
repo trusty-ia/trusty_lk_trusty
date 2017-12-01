@@ -58,6 +58,12 @@ ifeq ($(XBIN_TYPE), )
 XBIN_TYPE := XBIN
 endif
 
+ifeq ($(XBIN_ALIGNMENT), )
+XBIN_ALIGNMENT := 1
+else
+XBIN_ALIGNMENT := $(XBIN_ALIGNMENT)
+endif
+
 # save global variables
 SAVED_ARCH := $(ARCH)
 SAVED_GLOBAL_OPTFLAGS := $(GLOBAL_OPTFLAGS)
@@ -153,12 +159,15 @@ $(XBIN_SYMS_ELF): $(XBIN_ALL_OBJS) $(XBIN_LINKER_SCRIPT)
 	@echo linking $@
 	$(NOECHO)$(XBIN_LD) $(XBIN_LDFLAGS) -T $(XBIN_LINKER_SCRIPT) --start-group $(XBIN_ALL_OBJS) --end-group $(XBIN_LIBGCC) -o $@
 
-# And strip it
+# And strip it and pad with zeros to be page aligned
 $(XBIN_ELF): XBIN_STRIP := $(XBIN_STRIP)
+$(XBIN_ELF): XBIN_ALIGNMENT := $(XBIN_ALIGNMENT)
 $(XBIN_ELF): $(XBIN_SYMS_ELF)
 	@$(MKDIR)
 	@echo stripping $<
 	$(NOECHO)$(XBIN_STRIP) -s $< -o $@
+	@echo page aligning $<
+	$(NOECHO)truncate -s %$(XBIN_ALIGNMENT) $@
 
 # build XBIN binary
 $(XBIN_BIN): XBIN_OBJCOPY := $(XBIN_OBJCOPY)
@@ -200,6 +209,7 @@ XBIN_TYPE :=
 XBIN_ARCH :=
 XBIN_TOP_MODULE :=
 XBIN_BUILDDIR :=
+XBIN_ALIGNMENT :=
 
 XBIN_BIN :=
 XBIN_ELF :=

@@ -21,6 +21,18 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-.section .task.data
+#if IS_64BIT
+#define DATA_PTR .quad
+#else
+#define DATA_PTR .word
+#endif
+
+.section .task.data, "aw"
+.task.body.start:
 .incbin USER_TASK_ELF
+.task.body.end:
+
+.section .task.list, "a"
+DATA_PTR .task.body.start
+DATA_PTR .task.body.end
 

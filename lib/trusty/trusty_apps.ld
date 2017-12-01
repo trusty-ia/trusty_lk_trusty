@@ -23,12 +23,19 @@
 
 /* should be included in all lk linker scripts in the .data segment */
 SECTIONS {
+.__trusty_app_list : {
+__trusty_app_list_start = .;
+KEEP(*(.task.list .task.list.*))
+__trusty_app_list_end = .;
+}
+}
+INSERT AFTER .rodata;
+
+SECTIONS {
 .__trusty_app : {
 /* pre-built secure apps get inserted here */
 . = ALIGN(0x1000);
-__trusty_app_start = .;
-KEEP(*(.task.*))
-__trusty_app_end = .;
+KEEP(*(.task.data .task.data.*))
 . = ALIGN(0x1000);
 }
 }
