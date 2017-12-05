@@ -27,7 +27,7 @@
 #define DATA_PTR .word
 #endif
 
-.section .task.data, "aw"
+.section .task.data, "a"
 .task.body.start:
 .incbin USER_TASK_ELF
 .task.body.end:

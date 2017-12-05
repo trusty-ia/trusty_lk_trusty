@@ -39,4 +39,4 @@ KEEP(*(.task.data .task.data.*))
 . = ALIGN(0x1000);
 }
 }
-INSERT AFTER .data;
+INSERT AFTER .rodata;
