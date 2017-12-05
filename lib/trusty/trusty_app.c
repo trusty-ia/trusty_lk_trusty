@@ -350,47 +350,92 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
             (prg_hdr->p_vaddr >= trusty_app->end_bss))
             continue;
 
-        /*
-         * We're expecting to be able to execute the trusty_app in-place,
-         * meaning its PT_LOAD segments, should be page-aligned.
-         */
-        ASSERT(!(prg_hdr->p_vaddr & PAGE_MASK) &&
-               !(prg_hdr->p_offset & PAGE_MASK));
-
-        size_t size = (prg_hdr->p_memsz + PAGE_MASK) & ~PAGE_MASK;
-        paddr_t paddr = vaddr_to_paddr(trusty_app_image + prg_hdr->p_offset);
-        vaddr_t vaddr = prg_hdr->p_vaddr;
-        uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_USER;
-        if (!(prg_hdr->p_flags & PF_W)) {
-            arch_mmu_flags += ARCH_MMU_FLAG_PERM_RO;
-        }
-        if (!(prg_hdr->p_flags & PF_X)) {
-            arch_mmu_flags += ARCH_MMU_FLAG_PERM_NO_EXECUTE;
-        }
-
-        ret = vmm_alloc_physical(trusty_app->aspace, "elfseg", size,
-                                 (void **)&vaddr, PAGE_SIZE_SHIFT,
-                                 paddr, VMM_FLAG_VALLOC_SPECIFIC,
-                                 arch_mmu_flags);
-        if (ret) {
-            dprintf(CRITICAL, "cannot map the segment\n");
-            return ret;
-        }
-
+        /* check for overlap into user stack range */
         vaddr_t stack_bot = TRUSTY_APP_STACK_TOP -
                             trusty_app->props.min_stack_size;
-        /* check for overlap into user stack range */
-        if (stack_bot < vaddr + size) {
+
+        if (stack_bot < prg_hdr->p_vaddr + prg_hdr->p_memsz) {
             dprintf(CRITICAL,
                     "failed to load trusty_app: (overlaps user stack 0x%lx)\n",
                     stack_bot);
             return ERR_TOO_BIG;
         }
 
+        vaddr_t vaddr = prg_hdr->p_vaddr;
+        vaddr_t img_kvaddr = (vaddr_t)(trusty_app_image + prg_hdr->p_offset);
+        size_t mapping_size;
+
+        ASSERT(!(vaddr & PAGE_MASK));
+        ASSERT(!(img_kvaddr & PAGE_MASK));
+
+        uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_USER;
+        if (!(prg_hdr->p_flags & PF_X)) {
+            arch_mmu_flags += ARCH_MMU_FLAG_PERM_NO_EXECUTE;
+        }
+
+        if (prg_hdr->p_flags & PF_W) {
+            paddr_t upaddr;
+            void *load_kvaddr;
+            size_t copy_size;
+            size_t file_size;
+            mapping_size = ROUNDUP(prg_hdr->p_memsz, PAGE_SIZE);
+
+            ret = vmm_alloc(trusty_app->aspace, "elfseg", mapping_size,
+                            (void **)&vaddr, PAGE_SIZE_SHIFT,
+                            VMM_FLAG_VALLOC_SPECIFIC,
+                            arch_mmu_flags);
+
+            if (ret != NO_ERROR) {
+                dprintf(CRITICAL, "Could not allocate data segment\n");
+                return ret;
+            }
+
+            ASSERT(vaddr == prg_hdr->p_vaddr);
+
+            file_size = prg_hdr->p_filesz;
+            while (file_size > 0) {
+                ret = arch_mmu_query(&trusty_app->aspace->arch_aspace, vaddr,
+                                     &upaddr, NULL);
+                if (ret != NO_ERROR) {
+                    dprintf(CRITICAL, "Could not copy data segment: %d\n", ret);
+                    return ret;
+                }
+
+                load_kvaddr = paddr_to_kvaddr(upaddr);
+                ASSERT(load_kvaddr);
+                copy_size = MIN(file_size,PAGE_SIZE);
+                memcpy(load_kvaddr, (void *)img_kvaddr, copy_size);
+                file_size -= copy_size;
+                vaddr += copy_size;
+                img_kvaddr += copy_size;
+            }
+
+        } else {
+            mapping_size = ROUNDUP(prg_hdr->p_filesz, PAGE_SIZE);
+
+            paddr_t paddr = vaddr_to_paddr((void *)img_kvaddr);
+
+            ASSERT(paddr && !(paddr & PAGE_MASK));
+
+            arch_mmu_flags += ARCH_MMU_FLAG_PERM_RO;
+            ret = vmm_alloc_physical(trusty_app->aspace,
+                                     "elfseg", mapping_size, (void **)&vaddr,
+                                     PAGE_SIZE_SHIFT, paddr,
+                                     VMM_FLAG_VALLOC_SPECIFIC,
+                                     arch_mmu_flags);
+            if (ret) {
+                dprintf(CRITICAL, "cannot map RO segment\n");
+                return ret;
+            }
+
+            ASSERT(vaddr == prg_hdr->p_vaddr);
+        }
+
         LTRACEF("trusty_app %d: load vaddr 0x%08lx, paddr 0x%08lx,"
                 " rsize 0x%08zx, msize 0x%08x, access r%c%c,"
                 " flags 0x%x\n",
-                trusty_app->app_id, vaddr, paddr, size, prg_hdr->p_memsz,
+                trusty_app->app_id, vaddr, vaddr_to_paddr((void *)vaddr),
+                mapping_size, prg_hdr->p_memsz,
                 arch_mmu_flags & ARCH_MMU_FLAG_PERM_RO ? '-' : 'w',
                 arch_mmu_flags & ARCH_MMU_FLAG_PERM_NO_EXECUTE ? '-' : 'x',
                 arch_mmu_flags);
@@ -412,18 +457,9 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
         /* end of brk */
         last_mem = prg_hdr->p_vaddr + prg_hdr->p_memsz;
         if (last_mem > trusty_app->start_brk) {
-            void *segment_start = trusty_app_image + prg_hdr->p_offset;
-
             trusty_app->start_brk = last_mem;
             /* make brk consume the rest of the page */
-            trusty_app->end_brk = prg_hdr->p_vaddr + size;
-
-            /* zero fill the remainder of the page for brk.
-             * do it here (instead of init_brk) so we don't
-             * have to keep track of the kernel address of
-             * the mapping where brk starts */
-            memset(segment_start + prg_hdr->p_memsz, 0,
-                   size - prg_hdr->p_memsz);
+            trusty_app->end_brk = prg_hdr->p_vaddr + mapping_size;
         }
     }
 

@@ -210,26 +210,9 @@ SECTIONS
       .bss section disappears because there are no input sections.
       FIXME: Why do we need it? When there is no .bss section, we don't
       pad the .data section.  */
-   BYTE(0);
    . = ALIGN(. != 0 ? 32 / 8 : 1);
   }
   _bss_end__ = . ; __bss_end__ = . ;
-  .bss-pad     :
-  {
-   /* This .bss-pad section serves two purposes.
-      To execute the task in-place, the preceding .bss section needs to
-      occupy real space in the image, so when loaded into LK, there's
-      memory underneath it. Adding this section after .bss, forces space
-      in the file to be allocated.
-      This section also rounds .bss to be page-aligned, which is required,
-      so when multiple tasks are concatenated together in loading the image,
-      the end of the task (before the beginning of the next) has the needed
-      page alignment */
-   BYTE(0);
-   . += 1;
-   . = ALIGN(0x1000);
-  } =0
-  . = ALIGN(32 / 8);
   . = ALIGN(32 / 8);
   __end__ = . ;
   _end = .; PROVIDE (end = .);
