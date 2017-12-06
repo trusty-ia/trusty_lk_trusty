@@ -457,7 +457,7 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
         /* end of brk */
         last_mem = prg_hdr->p_vaddr + prg_hdr->p_memsz;
         if (last_mem > trusty_app->start_brk) {
-            trusty_app->start_brk = last_mem;
+            trusty_app->start_brk = ROUNDUP(last_mem, CACHE_LINE);
             /* make brk consume the rest of the page */
             trusty_app->end_brk = prg_hdr->p_vaddr + mapping_size;
         }
