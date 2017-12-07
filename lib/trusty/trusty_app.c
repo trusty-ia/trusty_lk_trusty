@@ -262,8 +262,7 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
         case TRUSTY_APP_CONFIG_KEY_MIN_HEAP_SIZE:
             /* MIN_HEAP_SIZE takes 1 data value */
             ASSERT((trusty_app->props.config_entry_cnt - i) > 1);
-            trusty_app->props.min_heap_size = ROUNDUP(config_blob[++i], 4096);
-            ASSERT(trusty_app->props.min_heap_size > 0);
+            trusty_app->props.min_heap_size = config_blob[++i];
             break;
         case TRUSTY_APP_CONFIG_KEY_MAP_MEM:
             /* MAP_MEM takes 3 data values */
