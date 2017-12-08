@@ -99,6 +99,54 @@ uint als_slot_cnt;
             (u)->clock_seq_and_node[6],                 \
             (u)->clock_seq_and_node[7]);
 
+static bool address_range_within_bounds(void *range_start, size_t range_size,
+                                        void *lower_bound, void *upper_bound)
+{
+    void *range_end = range_start + range_size;
+
+    if (upper_bound < lower_bound) {
+        LTRACEF("upper bound(%p) is below upper bound(%p)\n",
+                upper_bound, lower_bound);
+        return false;
+    }
+
+    if (range_end < range_start) {
+        LTRACEF("Range overflows. start:%p size:%zd end:%p\n", range_start,
+                range_size, range_end);
+        return false;
+    }
+
+    if (range_start < lower_bound) {
+        LTRACEF("Range starts(%p) before lower bound(%p)\n", range_start,
+                lower_bound);
+        return false;
+    }
+
+    if (range_end > upper_bound) {
+        LTRACEF("Range ends(%p) past upper bound(%p)\n", range_end,
+                upper_bound);
+        return false;
+    }
+
+   return true;
+}
+
+static inline bool address_range_within_img(void *range_start,
+                                            size_t range_size,
+                                            struct trusty_app_img *app_img)
+{
+    return address_range_within_bounds(range_start, range_size,
+                                       (void *)app_img->img_start,
+                                       (void *)app_img->img_end);
+}
+
+static bool compare_section_name(Elf32_Shdr *shdr, const char *name,
+                                 char *shstbl, uint32_t shstbl_size)
+{
+  return shstbl_size - shdr->sh_name > strlen(name) &&
+         !strcmp(shstbl + shdr->sh_name, name);
+}
+
 static void finalize_registration(void)
 {
     mutex_acquire(&apps_lock);
@@ -231,6 +279,13 @@ static status_t load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *sh
     trusty_app->props.min_stack_size = DEFAULT_STACK_SIZE;
 
     manifest_data = (char *)(trusty_app->app_img->img_start + shdr->sh_offset);
+
+    if (!address_range_within_img(manifest_data, shdr->sh_size,
+                                  trusty_app->app_img)) {
+        dprintf(CRITICAL, "app %u manifest data out of bounds\n",
+                trusty_app->app_id);
+        return ERR_NOT_VALID;
+    }
 
     memcpy(&trusty_app->props.uuid, (uuid_t *)manifest_data, sizeof(uuid_t));
 
@@ -374,12 +429,19 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
     vaddr_t last_mem = 0;
     trusty_app_image = (void *)trusty_app->app_img->img_start;
 
+    prg_hdr = (Elf32_Phdr *)(trusty_app_image + elf_hdr->e_phoff);
+
+    if (!address_range_within_img(prg_hdr,
+                                  sizeof(Elf32_Phdr) * elf_hdr->e_phnum,
+                                  trusty_app->app_img)) {
+        dprintf(CRITICAL, "ELF program headers table out of bounds\n");
+        return ERR_NOT_VALID;
+    }
+
     /* create mappings for PT_LOAD sections */
-    for (i = 0; i < elf_hdr->e_phnum; i++) {
+    for (i = 0; i < elf_hdr->e_phnum; i++, prg_hdr++) {
         vaddr_t first, last;
 
-        prg_hdr = (Elf32_Phdr *)(trusty_app_image + elf_hdr->e_phoff +
-                                 (i * sizeof(Elf32_Phdr)));
 
         LTRACEF("trusty_app %d: ELF type 0x%x, vaddr 0x%08x, paddr 0x%08x"
                 " rsize 0x%08x, msize 0x%08x, flags 0x%08x\n",
@@ -434,6 +496,12 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
             size_t file_size;
             mapping_size = ROUNDUP(prg_hdr->p_memsz, PAGE_SIZE);
 
+            if (!address_range_within_img((void *)img_kvaddr, prg_hdr->p_filesz,
+                                          trusty_app->app_img)) {
+                dprintf(CRITICAL, "ELF Program segment %u out of bounds\n", i);
+                return ERR_NOT_VALID;
+            }
+
             ret = vmm_alloc(trusty_app->aspace, "elfseg", mapping_size,
                             (void **)&vaddr, PAGE_SIZE_SHIFT,
                             VMM_FLAG_VALLOC_SPECIFIC,
@@ -467,6 +535,12 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
 
         } else {
             mapping_size = ROUNDUP(prg_hdr->p_filesz, PAGE_SIZE);
+
+            if (!address_range_within_img((void *)img_kvaddr, mapping_size,
+                                          trusty_app->app_img)) {
+                dprintf(CRITICAL, "ELF Program segment %u out of bounds\n", i);
+                return ERR_NOT_VALID;
+            }
 
             paddr_t paddr = vaddr_to_paddr((void *)img_kvaddr);
 
@@ -544,6 +618,7 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
     Elf32_Shdr *shdr;
     Elf32_Shdr *bss_shdr, *manifest_shdr;
     char *shstbl;
+    uint32_t shstbl_size;
     trusty_app_t *trusty_app;
     u_int i;
     status_t ret;
@@ -566,6 +641,12 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
     }
 
     ehdr = (Elf32_Ehdr *)app_img->img_start;
+    if (!address_range_within_img(ehdr, sizeof(Elf32_Ehdr), app_img)) {
+        dprintf(CRITICAL, "trusty_app_create: ELF header out of bounds\n");
+        ret = ERR_NOT_VALID;
+        goto err_hdr;
+    }
+
     if (strncmp((char *)ehdr->e_ident, ELFMAG, SELFMAG)) {
         dprintf(CRITICAL, "trusty_app_create: ELF header not found\n");
         ret = ERR_NOT_VALID;
@@ -573,7 +654,27 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
     }
 
     shdr = (Elf32_Shdr *) ((intptr_t)ehdr + ehdr->e_shoff);
+    if (!address_range_within_img(shdr, sizeof(Elf32_Shdr) * ehdr->e_shnum,
+                                  app_img)) {
+        dprintf(CRITICAL, "trusty_app_create: ELF section headers out of bounds\n");
+        ret = ERR_NOT_VALID;
+        goto err_hdr;
+    }
+
+    if (ehdr->e_shstrndx >= ehdr->e_shnum) {
+        dprintf(CRITICAL, "trusty_app_create: ELF names table section header out of bounds\n");
+        ret = ERR_NOT_VALID;
+        goto err_hdr;
+    }
+
     shstbl = (char *)((intptr_t)ehdr + shdr[ehdr->e_shstrndx].sh_offset);
+    shstbl_size = shdr[ehdr->e_shstrndx].sh_size;
+    if (!address_range_within_img(shstbl, shstbl_size, app_img)) {
+        dprintf(CRITICAL, "trusty_app_create: ELF section names out of bounds\n");
+        ret = ERR_NOT_VALID;
+        goto err_hdr;
+    }
+
     bss_shdr = manifest_shdr = NULL;
 
     for (i = 0; i < ehdr->e_shnum; i++) {
@@ -586,12 +687,12 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
                 shstbl + shdr[i].sh_name);
 
         /* track bss and manifest sections */
-        if (!strcmp((shstbl + shdr[i].sh_name), ".bss")) {
+        if (compare_section_name(shdr + i, ".bss", shstbl, shstbl_size)) {
             bss_shdr = shdr + i;
             trusty_app->end_bss = bss_shdr->sh_addr + bss_shdr->sh_size;
         }
-        else if (!strcmp((shstbl + shdr[i].sh_name),
-                          ".trusty_app.manifest")) {
+        else if (compare_section_name(shdr + i, ".trusty_app.manifest",
+                                      shstbl, shstbl_size)) {
             manifest_shdr = shdr + i;
         }
     }
