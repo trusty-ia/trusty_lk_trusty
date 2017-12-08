@@ -287,31 +287,49 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
             trusty_app->props.map_io_mem_cnt);
 }
 
-static status_t init_brk(trusty_app_t *trusty_app)
+static status_t init_brk(trusty_app_t *trusty_app, vaddr_t hint)
 {
     status_t status;
-    vaddr_t vaddr;
+    uint arch_mmu_flags;
+    vaddr_t start_brk;
+    vaddr_t hint_page_end;
+    size_t remaining;
 
-    trusty_app->cur_brk = trusty_app->start_brk;
+    status = arch_mmu_query(&trusty_app->aspace->arch_aspace, hint, NULL,
+                            &arch_mmu_flags);
+    ASSERT(status == NO_ERROR);
 
-    /* do we need to increase user mode heap (if not enough remains)? */
-    if ((trusty_app->end_brk - trusty_app->start_brk) >=
-        trusty_app->props.min_heap_size)
-        return NO_ERROR;
+    hint_page_end = ROUNDUP(hint, PAGE_SIZE);
 
-    vaddr = trusty_app->end_brk;
-    status = vmm_alloc(trusty_app->aspace, "heap",
-                       trusty_app->props.min_heap_size, (void**)&vaddr,
-                       PAGE_SIZE_SHIFT, VMM_FLAG_VALLOC_SPECIFIC,
-                       ARCH_MMU_FLAG_PERM_USER | ARCH_MMU_FLAG_PERM_NO_EXECUTE);
-    /* TODO: make sure allocated memory does not leak kernel data */
-    assert(vaddr == trusty_app->end_brk);
-    if (status != NO_ERROR) {
-        dprintf(CRITICAL, "cannot map brk\n");
-        return ERR_NO_MEMORY;
+    if (!(arch_mmu_flags & ARCH_MMU_FLAG_PERM_RO)) {
+        start_brk = ROUNDUP(hint, CACHE_LINE);
+        remaining = hint_page_end - start_brk;
+    } else {
+        start_brk = ROUNDUP(hint, PAGE_SIZE);
+        remaining = 0;
     }
 
-    trusty_app->end_brk += trusty_app->props.min_heap_size;
+    if (remaining < trusty_app->props.min_heap_size) {
+        status = vmm_alloc(trusty_app->aspace, "heap",
+                           trusty_app->props.min_heap_size - remaining,
+                           (void**)&hint_page_end,
+                           PAGE_SIZE_SHIFT, VMM_FLAG_VALLOC_SPECIFIC,
+                           ARCH_MMU_FLAG_PERM_USER |
+                           ARCH_MMU_FLAG_PERM_NO_EXECUTE);
+
+        if (status != NO_ERROR) {
+            dprintf(CRITICAL, "cannot map brk\n");
+            return ERR_NO_MEMORY;
+        }
+
+        ASSERT(hint_page_end == ROUNDUP(hint, PAGE_SIZE));
+    }
+
+    trusty_app->start_brk = start_brk;
+    trusty_app->cur_brk = trusty_app->start_brk;
+    trusty_app->end_brk = trusty_app->start_brk +
+                          trusty_app->props.min_heap_size;
+
     return NO_ERROR;
 }
 
@@ -326,11 +344,12 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
     vaddr_t start_data = 0;
     vaddr_t end_code = 0;
     vaddr_t end_data = 0;
+    vaddr_t last_mem = 0;
     trusty_app_image = (void *)trusty_app->app_img->img_start;
 
     /* create mappings for PT_LOAD sections */
     for (i = 0; i < elf_hdr->e_phnum; i++) {
-        vaddr_t first, last, last_mem;
+        vaddr_t first, last;
 
         prg_hdr = (Elf32_Phdr *)(trusty_app_image + elf_hdr->e_phoff +
                                  (i * sizeof(Elf32_Phdr)));
@@ -453,16 +472,11 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
         if (end_data < last)
             end_data = last;
 
-        /* end of brk */
-        last_mem = prg_hdr->p_vaddr + prg_hdr->p_memsz;
-        if (last_mem > trusty_app->start_brk) {
-            trusty_app->start_brk = ROUNDUP(last_mem, CACHE_LINE);
-            /* make brk consume the rest of the page */
-            trusty_app->end_brk = prg_hdr->p_vaddr + mapping_size;
-        }
+        /* hint for start of brk */
+        last_mem = MAX(last_mem, prg_hdr->p_vaddr + prg_hdr->p_memsz);
     }
 
-    ret = init_brk(trusty_app);
+    ret = init_brk(trusty_app, last_mem);
     if (ret != NO_ERROR) {
         dprintf(CRITICAL, "failed to load trusty_app: trusty_app heap creation error\n");
         return ret;
