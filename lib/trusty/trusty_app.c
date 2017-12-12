@@ -185,8 +185,11 @@ trusty_thread_create(const char *name, vaddr_t entry, int priority,
                     VMM_FLAG_VALLOC_SPECIFIC,
                     ARCH_MMU_FLAG_PERM_USER | ARCH_MMU_FLAG_PERM_NO_EXECUTE);
 
-    if (err != NO_ERROR)
+    if (err != NO_ERROR) {
+        dprintf(CRITICAL, "failed(%d) to create thread stack(0x%lx) for app %u\n",
+                err, stack_bot, trusty_app->app_id);
         goto err_stack;
+    }
 
     ASSERT(stack_bot == stack_start - stack_size);
 
@@ -210,14 +213,18 @@ err_stack:
     return NULL;
 }
 
-static void load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *shdr)
+static status_t load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *shdr)
 {
     char  *manifest_data;
     u_int *config_blob, config_blob_size;
     u_int i;
 
     /* have to at least have a valid UUID */
-    ASSERT(shdr->sh_size >= sizeof(uuid_t));
+    if (shdr->sh_size < sizeof(uuid_t)) {
+        dprintf(CRITICAL, "app %u manifest too small %u\n", trusty_app->app_id,
+                shdr->sh_size);
+        return ERR_NOT_VALID;
+    }
 
     /* init default config options before parsing manifest */
     trusty_app->props.min_heap_size = DEFAULT_HEAP_SIZE;
@@ -238,7 +245,7 @@ static void load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *shdr)
 
     /* if no config options we're done */
     if (trusty_app->props.config_entry_cnt == 0) {
-        return;
+        return NO_ERROR;
     }
 
     /* save off configuration blob start so it can be accessed later */
@@ -254,27 +261,41 @@ static void load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *shdr)
         switch (config_blob[i]) {
         case TRUSTY_APP_CONFIG_KEY_MIN_STACK_SIZE:
             /* MIN_STACK_SIZE takes 1 data value */
-            ASSERT((trusty_app->props.config_entry_cnt - i) > 1);
+            if ((trusty_app->props.config_entry_cnt - i) < 2) {
+                dprintf(CRITICAL, "app %u manifest missing MIN_STACK_SIZE value\n",
+                        trusty_app->app_id);
+                return ERR_NOT_VALID;
+            }
             trusty_app->props.min_stack_size = ROUNDUP(config_blob[++i], 4096);
-            ASSERT(trusty_app->props.min_stack_size > 0);
+            if (trusty_app->props.min_stack_size == 0) {
+                dprintf(CRITICAL, "app %u manifest MIN_STACK_SIZE is 0\n",
+                        trusty_app->app_id);
+                return ERR_NOT_VALID;
+            }
             break;
         case TRUSTY_APP_CONFIG_KEY_MIN_HEAP_SIZE:
             /* MIN_HEAP_SIZE takes 1 data value */
-            ASSERT((trusty_app->props.config_entry_cnt - i) > 1);
+            if ((trusty_app->props.config_entry_cnt - i) < 2) {
+                dprintf(CRITICAL, "app %u manifest missing MIN_HEAP_SIZE value\n",
+                        trusty_app->app_id);
+                return ERR_NOT_VALID;
+            }
             trusty_app->props.min_heap_size = config_blob[++i];
             break;
         case TRUSTY_APP_CONFIG_KEY_MAP_MEM:
             /* MAP_MEM takes 3 data values */
-            ASSERT((trusty_app->props.config_entry_cnt - i) > 3);
+            if ((trusty_app->props.config_entry_cnt - i) < 4) {
+                dprintf(CRITICAL, "app %u manifest missing MAP_MEM value\n",
+                        trusty_app->app_id);
+                return ERR_NOT_VALID;
+            }
             trusty_app->props.map_io_mem_cnt++;
             i += 3;
             break;
         default:
-            dprintf(CRITICAL, "%s: unknown config key: %d\n", __func__,
-                    config_blob[i]);
-            ASSERT(0);
-            i++;
-            break;
+            dprintf(CRITICAL, "app %u manifest contains unknown config key %u\n",
+                    trusty_app->app_id, config_blob[i]);
+            return ERR_NOT_VALID;
         }
     }
 
@@ -284,6 +305,8 @@ static void load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *shdr)
             trusty_app->props.min_heap_size);
     LTRACEF("trusty_app %p: num_io_mem=%d\n", trusty_app,
             trusty_app->props.map_io_mem_cnt);
+
+    return NO_ERROR;
 }
 
 static status_t init_brk(trusty_app_t *trusty_app, vaddr_t hint)
@@ -296,7 +319,11 @@ static status_t init_brk(trusty_app_t *trusty_app, vaddr_t hint)
 
     status = arch_mmu_query(&trusty_app->aspace->arch_aspace, hint, NULL,
                             &arch_mmu_flags);
-    ASSERT(status == NO_ERROR);
+    if(status != NO_ERROR) {
+        dprintf(CRITICAL, "app %u heap hint page is not mapped %u\n",
+                trusty_app->app_id, status);
+        return ERR_NOT_VALID;
+    }
 
     hint_page_end = ROUNDUP(hint, PAGE_SIZE);
 
@@ -317,7 +344,8 @@ static status_t init_brk(trusty_app_t *trusty_app, vaddr_t hint)
                            ARCH_MMU_FLAG_PERM_NO_EXECUTE);
 
         if (status != NO_ERROR) {
-            dprintf(CRITICAL, "cannot map brk\n");
+            dprintf(CRITICAL, "failed(%d) to create heap(0x%lx) for app %u\n",
+                    status, hint_page_end, trusty_app->app_id);
             return ERR_NO_MEMORY;
         }
 
@@ -382,8 +410,17 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
         vaddr_t img_kvaddr = (vaddr_t)(trusty_app_image + prg_hdr->p_offset);
         size_t mapping_size;
 
-        ASSERT(!(vaddr & PAGE_MASK));
-        ASSERT(!(img_kvaddr & PAGE_MASK));
+        if (vaddr & PAGE_MASK) {
+            dprintf(CRITICAL, "app %u segment %u load address 0x%lx in not page aligned\n",
+                    trusty_app->app_id, i, vaddr);
+            return ERR_NOT_VALID;
+        }
+
+        if (img_kvaddr & PAGE_MASK) {
+            dprintf(CRITICAL, "app %u segment %u image address 0x%lx in not page aligned\n",
+                    trusty_app->app_id, i, img_kvaddr);
+            return ERR_NOT_VALID;
+        }
 
         uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_USER;
         if (!(prg_hdr->p_flags & PF_X)) {
@@ -403,7 +440,8 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
                             arch_mmu_flags);
 
             if (ret != NO_ERROR) {
-                dprintf(CRITICAL, "Could not allocate data segment\n");
+                dprintf(CRITICAL, "failed(%d) to allocate data segment(0x%lx) %u for app %u\n",
+                        ret, vaddr, i, trusty_app->app_id);
                 return ret;
             }
 
@@ -440,8 +478,9 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
                                      PAGE_SIZE_SHIFT, paddr,
                                      VMM_FLAG_VALLOC_SPECIFIC,
                                      arch_mmu_flags);
-            if (ret) {
-                dprintf(CRITICAL, "cannot map RO segment\n");
+            if (ret != NO_ERROR) {
+                dprintf(CRITICAL, "failed(%d) to map RO segment(0x%lx) %u for app %u\n",
+                        ret, vaddr, i, trusty_app->app_id);
                 return ret;
             }
 
@@ -507,9 +546,13 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
     char *shstbl;
     trusty_app_t *trusty_app;
     u_int i;
+    status_t ret;
 
-    ASSERT(!(app_img->img_start & PAGE_MASK));
-    ASSERT(!(app_img->img_end & PAGE_MASK));
+    if (app_img->img_start & PAGE_MASK || app_img->img_end & PAGE_MASK) {
+        dprintf(CRITICAL, "app image is not page aligned start 0x%lx end 0x%lx\n",
+                app_img->img_start, app_img->img_end);
+        return ERR_NOT_VALID;
+    }
 
     dprintf(SPEW, "trusty_app: start %p size 0x%08lx end %p\n",
             (void *)app_img->img_start,
@@ -525,8 +568,8 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
     ehdr = (Elf32_Ehdr *)app_img->img_start;
     if (strncmp((char *)ehdr->e_ident, ELFMAG, SELFMAG)) {
         dprintf(CRITICAL, "trusty_app_create: ELF header not found\n");
-        free(trusty_app);
-        return  ERR_NOT_VALID;
+        ret = ERR_NOT_VALID;
+        goto err_hdr;
     }
 
     shdr = (Elf32_Shdr *) ((intptr_t)ehdr + ehdr->e_shoff);
@@ -554,16 +597,38 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
     }
 
     /* we need these sections */
-    ASSERT(bss_shdr && manifest_shdr);
+    if (!bss_shdr) {
+        dprintf(CRITICAL, "bss section header not found\n");
+        ret = ERR_NOT_VALID;
+        goto err_hdr;
+
+    }
+
+    if (!manifest_shdr) {
+        dprintf(CRITICAL, "manifest section header not found\n");
+        ret = ERR_NOT_VALID;
+        goto err_hdr;
+
+    }
 
     trusty_app->app_id = trusty_next_app_id++;
     trusty_app->app_img = app_img;
 
-    load_app_config_options(trusty_app, manifest_shdr);
+    ret = load_app_config_options(trusty_app, manifest_shdr);
+    if (ret != NO_ERROR) {
+        dprintf(CRITICAL, "manifest processing failed\n");
+        goto err_load;
+    }
 
     list_add_tail(&trusty_app_list, &trusty_app->node);
 
     return NO_ERROR;
+
+err_load:
+    trusty_next_app_id--;
+err_hdr:
+    free(trusty_app);
+    return ret;
 }
 
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
