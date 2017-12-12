@@ -210,8 +210,7 @@ err_stack:
     return NULL;
 }
 
-static void load_app_config_options(intptr_t trusty_app_image_addr,
-                                    trusty_app_t *trusty_app, Elf32_Shdr *shdr)
+static void load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *shdr)
 {
     char  *manifest_data;
     u_int *config_blob, config_blob_size;
@@ -224,7 +223,7 @@ static void load_app_config_options(intptr_t trusty_app_image_addr,
     trusty_app->props.min_heap_size = DEFAULT_HEAP_SIZE;
     trusty_app->props.min_stack_size = DEFAULT_STACK_SIZE;
 
-    manifest_data = (char *)(trusty_app_image_addr + shdr->sh_offset);
+    manifest_data = (char *)(trusty_app->app_img->img_start + shdr->sh_offset);
 
     memcpy(&trusty_app->props.uuid, (uuid_t *)manifest_data, sizeof(uuid_t));
 
@@ -560,7 +559,7 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
     trusty_app->app_id = trusty_next_app_id++;
     trusty_app->app_img = app_img;
 
-    load_app_config_options(app_img->img_start, trusty_app, manifest_shdr);
+    load_app_config_options(trusty_app, manifest_shdr);
 
     list_add_tail(&trusty_app_list, &trusty_app->node);
 
