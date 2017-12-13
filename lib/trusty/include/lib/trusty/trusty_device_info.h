@@ -126,6 +126,7 @@ typedef struct trusty_device_info{
 
 #define ATTKB_INFO_OFFSET    __offsetof(struct trusty_device_info, attkb_size)
 
+#define   GET_NONE         0
 #define   GET_SEED         (1<<0)
 #define   GET_ATTKB        (1<<1)
 #endif
