@@ -771,9 +771,102 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
     return ERR_NOT_FOUND;
 }
 
+static status_t trusty_app_start(trusty_app_t *trusty_app)
+{
+    char name[32];
+    struct trusty_thread *trusty_thread;
+    struct trusty_app_notifier *n;
+    Elf32_Ehdr *elf_hdr;
+    int ret;
+
+    snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x",
+             trusty_app->app_id,
+             trusty_app->props.uuid.time_low,
+             trusty_app->props.uuid.time_mid,
+             trusty_app->props.uuid.time_hi_and_version);
+
+    ret = vmm_create_aspace(&trusty_app->aspace, name, 0);
+    if (ret != NO_ERROR) {
+        dprintf(CRITICAL, "Failed(%d) to allocate address space for %s\n", ret,
+                name);
+        goto err_aspace;
+    }
+
+    ret = alloc_address_map(trusty_app);
+    if (ret != NO_ERROR) {
+        dprintf(CRITICAL, "failed(%d) to load address map for %s\n", ret, name);
+        goto err_map;
+    }
+
+    /* attach als_cnt */
+    trusty_app->als = calloc(1, als_slot_cnt * sizeof(void*));
+    if (!trusty_app->als) {
+        dprintf(CRITICAL, "failed to allocate local storage for %s\n", name );
+        ret = ERR_NO_MEMORY;
+        /* alloc_address_map gets cleaned up by destroying the address space */
+        goto err_alloc;
+    }
+
+    /* call all registered startup notifiers */
+    list_for_every_entry(&app_notifier_list, n, struct trusty_app_notifier,
+                         node) {
+
+        if (!n->startup)
+            continue;
+
+        ret = n->startup(trusty_app);
+        if (ret != NO_ERROR) {
+            dprintf(CRITICAL, "failed(%d) to invoke startup notifier for %s\n",
+                    ret, name);
+            goto err_notifier;
+        }
+    }
+
+    elf_hdr = (Elf32_Ehdr *)trusty_app->app_img->img_start;
+    trusty_thread = trusty_thread_create(name, elf_hdr->e_entry,
+                                         DEFAULT_PRIORITY,
+                                         TRUSTY_APP_STACK_TOP,
+                                         trusty_app->props.min_stack_size,
+                                         trusty_app);
+    if (!trusty_thread) {
+        dprintf(CRITICAL, "failed to allocate trusty thread for %s\n", name);
+        ret = ERR_NO_MEMORY;
+        goto err_thread;
+    }
+
+    trusty_app->thread = trusty_thread;
+
+    ret = trusty_thread_start(trusty_app->thread);
+
+    ASSERT(ret == NO_ERROR);
+
+    return ret;
+
+err_thread:
+err_notifier:
+    for (n = list_prev_type(&app_notifier_list, &n->node,
+                            struct trusty_app_notifier, node);
+         n != NULL;
+         n = list_prev_type(&app_notifier_list, &n->node,
+                            struct trusty_app_notifier, node)) {
+        if (!n->shutdown)
+            continue;
+
+        if (n->shutdown(trusty_app) != NO_ERROR)
+            panic("failed to invoke shutdown notifier for %s\n",
+                  name);
+    }
+
+    free(trusty_app->als);
+err_alloc:
+err_map:
+    vmm_free_aspace(trusty_app->aspace);
+err_aspace:
+    return ret;
+}
+
 void trusty_app_init(void)
 {
-    trusty_app_t *trusty_app;
     struct trusty_app_img *app_img;
 
     finalize_registration();
@@ -782,57 +875,6 @@ void trusty_app_init(void)
          app_img != __trusty_app_list_end; app_img++) {
         if (trusty_app_create(app_img) != NO_ERROR)
             panic("Failed to create builtin apps\n");
-    }
-
-    list_for_every_entry(&trusty_app_list, trusty_app, trusty_app_t, node) {
-        char name[32];
-        struct trusty_thread *trusty_thread;
-        int ret;
-
-        snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x",
-                 trusty_app->app_id,
-                 trusty_app->props.uuid.time_low,
-                 trusty_app->props.uuid.time_mid,
-                 trusty_app->props.uuid.time_hi_and_version);
-
-        ret = vmm_create_aspace(&trusty_app->aspace, name, 0);
-        if (ret != NO_ERROR) {
-            panic("Failed to allocate address space for %s\n", name);
-        }
-
-        Elf32_Ehdr *elf_hdr = (Elf32_Ehdr *)trusty_app->app_img->img_start;
-        trusty_thread = trusty_thread_create(name, elf_hdr->e_entry,
-                                             DEFAULT_PRIORITY,
-                                             TRUSTY_APP_STACK_TOP,
-                                             trusty_app->props.min_stack_size,
-                                             trusty_app);
-        if (trusty_thread == NULL) {
-            /* TODO: do better than this */
-            panic("allocate user thread failed\n");
-        }
-        trusty_app->thread = trusty_thread;
-
-        ret = alloc_address_map(trusty_app);
-        if (ret != NO_ERROR) {
-            panic("failed to load address map\n");
-        }
-
-        /* attach als_cnt */
-        trusty_app->als = calloc(1, als_slot_cnt * sizeof(void*));
-        if (!trusty_app->als) {
-            panic("allocate app local storage failed\n");
-        }
-
-        /* call all registered startup notifiers */
-        trusty_app_notifier_t *n;
-        list_for_every_entry(&app_notifier_list, n, trusty_app_notifier_t, node)
-        {
-            if (n->startup) {
-                ret = n->startup(trusty_app);
-                if (ret != NO_ERROR)
-                    panic("failed (%d) to invoke startup notifier\n", ret);
-            }
-        }
     }
 }
 
@@ -866,11 +908,10 @@ static void start_apps(uint level)
     int ret;
 
     list_for_every_entry(&trusty_app_list, trusty_app, trusty_app_t, node) {
-        if (trusty_app->thread->entry) {
-            ret = trusty_thread_start(trusty_app->thread);
-            if (ret)
-                panic("Cannot start Trusty app!\n");
-        }
+        ret = trusty_app_start(trusty_app);
+        if (ret != NO_ERROR)
+            panic("Cannot start(%d) Trusty app %u!\n", ret,
+                   trusty_app->app_id);
     }
 }
 
