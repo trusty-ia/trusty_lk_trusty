@@ -28,6 +28,7 @@
 #include <debug.h>
 #include "elf.h"
 #include <err.h>
+#include <kernel/event.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
 #include <malloc.h>
@@ -83,6 +84,8 @@ static bool apps_started;
 static mutex_t apps_lock = MUTEX_INITIAL_VALUE(apps_lock);
 static struct list_node app_notifier_list = LIST_INITIAL_VALUE(app_notifier_list);
 uint als_slot_cnt;
+static event_t app_mgr_event = EVENT_INITIAL_VALUE(app_mgr_event, 0,
+                                                   EVENT_FLAG_AUTOUNSIGNAL);
 
 #define PRINT_TRUSTY_APP_UUID(tid,u)                    \
     dprintf(SPEW,                                       \
@@ -210,7 +213,6 @@ void __NO_RETURN trusty_thread_exit(int retcode)
     stack_bot = trusty_thread->stack_start - trusty_thread->stack_size;
 
     vmm_free_region(trusty_thread->app->aspace, stack_bot);
-    free(trusty_thread);
 
     thread_exit(retcode);
 }
@@ -714,6 +716,7 @@ static status_t trusty_app_create(struct trusty_app_img *app_img)
 
     trusty_app->app_id = trusty_next_app_id++;
     trusty_app->app_img = app_img;
+    trusty_app->state = APP_NOT_RUNNING;
 
     ret = load_app_config_options(trusty_app, manifest_shdr);
     if (ret != NO_ERROR) {
@@ -779,6 +782,8 @@ static status_t trusty_app_start(trusty_app_t *trusty_app)
     Elf32_Ehdr *elf_hdr;
     int ret;
 
+    DEBUG_ASSERT(trusty_app->state == APP_STARTING);
+
     snprintf(name, sizeof(name), "trusty_app_%d_%08x-%04x-%04x",
              trusty_app->app_id,
              trusty_app->props.uuid.time_low,
@@ -836,6 +841,7 @@ static status_t trusty_app_start(trusty_app_t *trusty_app)
 
     trusty_app->thread = trusty_thread;
 
+    trusty_app->state = APP_RUNNING;
     ret = trusty_thread_start(trusty_app->thread);
 
     ASSERT(ret == NO_ERROR);
@@ -865,11 +871,133 @@ err_aspace:
     return ret;
 }
 
+void trusty_app_exit(int status)
+{
+    status_t ret;
+    struct trusty_app *app;
+    struct trusty_app_notifier *notifier;
+
+    app = current_trusty_app();
+
+    DEBUG_ASSERT(app->state == APP_RUNNING);
+
+    LTRACEF("app %u exiting...\n", app->app_id);
+
+    app->state = APP_TERMINATING;
+
+    list_for_every_entry(&app_notifier_list, notifier,
+                         struct trusty_app_notifier, node) {
+
+        if(!notifier->shutdown)
+            continue;
+
+        ret = notifier->shutdown(app);
+        if (ret != NO_ERROR)
+            panic("shutdown notifier for app %u failed(%d)\n",
+                  app->app_id, ret);
+    }
+
+    free(app->als);
+    event_signal(&app_mgr_event, false);
+    trusty_thread_exit(status);
+}
+
+static status_t app_mgr_handle_starting(struct trusty_app *app)
+{
+    status_t ret;
+
+    DEBUG_ASSERT(app->state == APP_STARTING);
+    LTRACEF("starting app %u\n", app->app_id);
+
+    ret = trusty_app_start(app);
+
+    if (ret != NO_ERROR)
+        app->state = APP_NOT_RUNNING;
+
+    return ret;
+}
+
+static status_t app_mgr_handle_terminating(struct trusty_app *app)
+{
+    status_t ret;
+    int retcode;
+
+    DEBUG_ASSERT(app->state == APP_TERMINATING);
+    LTRACEF("waiting for app %u to exit \n", app->app_id);
+
+    ret = thread_join(app->thread->thread, &retcode, INFINITE_TIME);
+    ASSERT(ret == NO_ERROR);
+    free(app->thread);
+    ret = vmm_free_aspace(app->aspace);
+    app->state = APP_NOT_RUNNING;
+
+    return ret;
+}
+
+static int app_mgr(void *arg)
+{
+    status_t ret;
+    struct trusty_app *app;
+
+    while (true) {
+        LTRACEF("app manager waiting for events\n");
+        event_wait(&app_mgr_event);
+        list_for_every_entry(&trusty_app_list, app, struct trusty_app, node) {
+            switch (app->state) {
+            case APP_TERMINATING:
+                ret = app_mgr_handle_terminating(app);
+                if (ret != NO_ERROR)
+                    panic("failed(%d) to terminate app %u\n", ret, app->app_id);
+                break;
+            case APP_NOT_RUNNING:
+                break;
+            case APP_STARTING:
+                ret = app_mgr_handle_starting(app);
+                if (ret != NO_ERROR)
+                    panic("failed(%d) to start app %u\n", ret, app->app_id);
+                break;
+            case APP_RUNNING:
+                break;
+            default:
+                panic("app %u in unknown state %u\n", app->app_id,
+                      app->state);
+            }
+        }
+    }
+}
+
+static void app_mgr_init(void)
+{
+    status_t err;
+    thread_t *app_mgr_thread;
+
+    LTRACEF("Creating app manager thread\n");
+    app_mgr_thread = thread_create("app manager", &app_mgr, NULL,
+                                   DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+
+    if (!app_mgr_thread)
+        panic("Failed to create app manager thread\n");
+
+    err = thread_resume(app_mgr_thread);
+    if (err != NO_ERROR)
+        panic("Failed to start app manager thread\n");
+}
+
+static status_t trusty_app_request_start(struct trusty_app *app)
+{
+    DEBUG_ASSERT(app->state == APP_NOT_RUNNING);
+
+    app->state = APP_STARTING;
+    return event_signal(&app_mgr_event, false);
+}
+
 void trusty_app_init(void)
 {
     struct trusty_app_img *app_img;
 
     finalize_registration();
+
+    app_mgr_init();
 
     for (app_img = __trusty_app_list_start;
          app_img != __trusty_app_list_end; app_img++) {
@@ -908,10 +1036,9 @@ static void start_apps(uint level)
     int ret;
 
     list_for_every_entry(&trusty_app_list, trusty_app, trusty_app_t, node) {
-        ret = trusty_app_start(trusty_app);
+        ret = trusty_app_request_start(trusty_app);
         if (ret != NO_ERROR)
-            panic("Cannot start(%d) Trusty app %u!\n", ret,
-                   trusty_app->app_id);
+            panic("Cannot start(%d) Trusty app %u!\n", ret, trusty_app->app_id);
     }
 }
 

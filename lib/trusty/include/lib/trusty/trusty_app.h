@@ -32,6 +32,13 @@
 #include <kernel/vm.h>
 #include <lib/trusty/uuid.h>
 
+enum app_state {
+    APP_NOT_RUNNING = 0,
+    APP_STARTING,
+    APP_RUNNING,
+    APP_TERMINATING,
+};
+
 typedef struct
 {
     uuid_t      uuid;
@@ -62,6 +69,7 @@ typedef struct trusty_app
 {
     /* corresponds to the order in which the apps were started */
     u_int app_id;
+    enum app_state state;
     vmm_aspace_t *aspace;
     vaddr_t end_bss;
     vaddr_t start_brk;
@@ -76,6 +84,7 @@ typedef struct trusty_app
 } trusty_app_t;
 
 void trusty_app_init(void);
+void trusty_app_exit(int status) __NO_RETURN;
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
                                u_int mmio_id, vaddr_t *vaddr, uint32_t size);
 trusty_app_t *trusty_app_find_by_uuid(uuid_t *uuid);
