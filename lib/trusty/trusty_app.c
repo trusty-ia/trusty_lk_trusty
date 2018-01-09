@@ -55,7 +55,16 @@ enum {
     TRUSTY_APP_CONFIG_KEY_MIN_STACK_SIZE        = 1,
     TRUSTY_APP_CONFIG_KEY_MIN_HEAP_SIZE         = 2,
     TRUSTY_APP_CONFIG_KEY_MAP_MEM               = 3,
+    TRUSTY_APP_CONFIG_KEY_MGMT_FLAGS            = 4,
 };
+
+enum trusty_app_mgmt_flags {
+    TRUSTY_APP_MGMT_FLAGS_NONE                   = 0x0,
+    /* Restart application on exit */
+    TRUSTY_APP_MGMT_FLAGS_RESTART_ON_EXIT        = 0x1,
+};
+
+#define DEFAULT_MGMT_FLAGS TRUSTY_APP_MGMT_FLAGS_NONE
 
 typedef struct trusty_app_manifest {
     uuid_t      uuid;
@@ -279,6 +288,7 @@ static status_t load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *sh
     /* init default config options before parsing manifest */
     trusty_app->props.min_heap_size = DEFAULT_HEAP_SIZE;
     trusty_app->props.min_stack_size = DEFAULT_STACK_SIZE;
+    trusty_app->props.mgmt_flags = DEFAULT_MGMT_FLAGS;
 
     manifest_data = (char *)(trusty_app->app_img->img_start + shdr->sh_offset);
 
@@ -348,6 +358,15 @@ static status_t load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *sh
             }
             trusty_app->props.map_io_mem_cnt++;
             i += 3;
+            break;
+        case TRUSTY_APP_CONFIG_KEY_MGMT_FLAGS:
+            /* MGMT_FLAGS takes 1 data value */
+            if (trusty_app->props.config_entry_cnt - i < 2) {
+                dprintf(CRITICAL, "app %u manifest missing MGMT_FLAGS value\n",
+                        trusty_app->app_id);
+                return ERR_NOT_VALID;
+            }
+            trusty_app->props.mgmt_flags = config_blob[++i];
             break;
         default:
             dprintf(CRITICAL, "app %u manifest contains unknown config key %u\n",
@@ -929,7 +948,14 @@ static status_t app_mgr_handle_terminating(struct trusty_app *app)
     ASSERT(ret == NO_ERROR);
     free(app->thread);
     ret = vmm_free_aspace(app->aspace);
-    app->state = APP_NOT_RUNNING;
+
+    if (app->props.mgmt_flags & TRUSTY_APP_MGMT_FLAGS_RESTART_ON_EXIT) {
+        app->state = APP_STARTING;
+        event_signal(&app_mgr_event, false);
+    }
+    else {
+        app->state = APP_NOT_RUNNING;
+    }
 
     return ret;
 }

@@ -42,6 +42,7 @@ enum app_state {
 typedef struct
 {
     uuid_t      uuid;
+    uint32_t    mgmt_flags;
     uint32_t    min_stack_size;
     uint32_t    min_heap_size;
     uint32_t    map_io_mem_cnt;
