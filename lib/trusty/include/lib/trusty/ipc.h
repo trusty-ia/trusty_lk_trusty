@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include <lib/trusty/trusty_app.h>
 #include <lib/trusty/handle.h>
 #include <lib/trusty/ipc_msg.h>
 #include <lib/trusty/uuid.h>
@@ -137,6 +138,33 @@ int ipc_port_publish(handle_t *phandle);
 /* server calls to accept a pending connection */
 int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
                     const uuid_t **uuid_ptr);
+
+/**
+ * ipc_register_startup_port() - Register a start-on-connection port
+ * @app: application owning the port
+ * @path: name of the port
+ * @len: length of path
+ * @flags: port attributes
+ *
+ * Registering a port casues the owning application to be:
+ *
+ * 1. started when a connection is received on that port
+ * 2. restarted after exiting if there are still pending connections for that
+ *    port
+ *
+ * Return: ERR_ALREADY_EXISTS if a port with the same name has already been
+ * registered. ERR_NO_MEMORY if the port can not be created. ERR_INVALID_ARGS
+ * if len is invalid. NO_ERROR if the port is succesfully registered
+ */
+status_t ipc_register_startup_port(struct trusty_app *app, const char *path,
+                                   uint32_t len, uint32_t flags);
+
+/**
+ * ipc_handle_app_exit() - Perform necessary actions when an application exits
+ * @app: exiting application
+ *
+ */
+void ipc_handle_app_exit(struct trusty_app *app);
 
 /* client requests a connection to a port */
 enum {

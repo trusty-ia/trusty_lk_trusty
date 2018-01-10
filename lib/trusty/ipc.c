@@ -55,6 +55,8 @@ static struct list_node ipc_port_list = LIST_INITIAL_VALUE(ipc_port_list);
 
 static struct mutex ipc_port_lock = MUTEX_INITIAL_VALUE(ipc_port_lock);
 
+static struct list_node startup_ports = LIST_INITIAL_VALUE(startup_ports);
+
 static uint32_t port_poll(handle_t *handle, uint32_t emask, bool finalize);
 static void port_shutdown(handle_t *handle);
 static void port_handle_destroy(handle_t *handle);
@@ -68,6 +70,13 @@ static void chan_shutdown(ipc_chan_t *chan);
 static void chan_add_ref(ipc_chan_t *conn, obj_ref_t *ref);
 static void chan_del_ref(ipc_chan_t *conn, obj_ref_t *ref);
 
+struct startup_port {
+	char path[IPC_PORT_PATH_MAX];
+	struct trusty_app *app;
+	struct list_node node;
+	uint32_t flags;
+};
+
 static struct handle_ops ipc_port_handle_ops = {
 	.poll		= port_poll,
 	.destroy	= port_handle_destroy,
@@ -77,6 +86,64 @@ static struct handle_ops ipc_chan_handle_ops = {
 	.poll		= chan_poll,
 	.destroy	= chan_handle_destroy,
 };
+
+static struct startup_port *find_startup_port(const char *path,
+                                              struct trusty_app *app)
+{
+	struct startup_port *port;
+	list_for_every_entry(&startup_ports, port, struct startup_port, node) {
+
+		if (app != NULL && port->app != app)
+			continue;
+
+		if (!strncmp(path, port->path, IPC_PORT_PATH_MAX))
+			return port;
+	}
+
+	return NULL;
+}
+
+status_t ipc_register_startup_port(struct trusty_app *app, const char *path,
+                                   uint32_t len, uint32_t flags)
+{
+	struct startup_port *port;
+	uint32_t bound_len;
+
+	LTRACEF("Registering app port: app %p path %s flags 0x%x\n",
+                app, path, flags);
+
+	if (len > IPC_PORT_PATH_MAX) {
+		LTRACEF("port path too long %u\n", len);
+		return ERR_INVALID_ARGS;
+	}
+
+	bound_len = strnlen(path, len);
+	if (bound_len == 0 || bound_len == len) {
+		LTRACEF("Empty or not null-terminated path \n");
+		return ERR_INVALID_ARGS;
+	}
+
+	port = find_startup_port(path, NULL);
+	if (port) {
+		LTRACEF("Port %s already registered by %p\n",
+                        path, port->app);
+		return ERR_ALREADY_EXISTS;
+	}
+
+	port = calloc(1, sizeof(struct startup_port));
+	if (!port) {
+		LTRACEF("Could not allocate app port %s\n", port->path);
+		return ERR_NO_MEMORY;
+	}
+
+	strcpy(port->path, path);
+	port->flags = flags;
+	port->app = app;
+	list_add_tail(&startup_ports, &port->node);
+
+	return NO_ERROR;
+}
+
 
 bool ipc_is_channel(handle_t *handle)
 {
@@ -154,6 +221,14 @@ err_copy_path:
 	return ret;
 }
 
+static void add_to_waiting_for_port_list_locked(ipc_chan_t *client)
+{
+	DEBUG_ASSERT(client);
+	DEBUG_ASSERT(!list_in_list(&client->node));
+
+	list_add_tail(&waiting_for_port_chan_list, &client->node);
+	chan_add_ref(client, &client->node_ref);
+}
 
 /*
  * Shutting down port
@@ -162,6 +237,8 @@ err_copy_path:
  */
 static void port_shutdown(handle_t *phandle)
 {
+	bool is_startup_port = false;
+	ipc_chan_t *client;
 	ASSERT(phandle);
 	ASSERT(ipc_is_port(phandle));
 
@@ -176,9 +253,44 @@ static void port_shutdown(handle_t *phandle)
 	}
 	mutex_release(&ipc_port_lock);
 
+	if (find_startup_port(port->path, NULL))
+		is_startup_port = true;
+
 	/* tear down pending connections */
 	ipc_chan_t *server, *temp;
 	list_for_every_entry_safe(&port->pending_list, server, temp, ipc_chan_t, node) {
+		/* Check if the port being shutdown has been registered by an
+		 * application. If so, detach the client connection and put it
+		 * back in the waiting for port list
+		 */
+		if (is_startup_port) {
+			/* Get a local ref */
+			obj_ref_t tmp_client_ref =
+				OBJ_REF_INITIAL_VALUE(tmp_client_ref);
+			chan_add_ref(server->peer, &tmp_client_ref);
+
+			/* Remove peer refs */
+			client = server->peer;
+			server->peer = NULL;
+			chan_del_ref(client, &server->peer_ref);
+			client->peer = NULL;
+			chan_del_ref(server, &client->peer_ref);
+
+			/* Reset client */
+			ipc_msg_queue_destroy(client->msg_queue);
+			client->msg_queue = NULL;
+			client->path = strdup(port->path);
+			ASSERT(client->path);
+
+			/* Add client to waiting_for_port list */
+			mutex_acquire(&ipc_port_lock);
+			add_to_waiting_for_port_list_locked(client);
+			mutex_release(&ipc_port_lock);
+
+			/* Drop local ref */
+			chan_del_ref(client, &tmp_client_ref);
+		}
+
 		/* pending server channel in not in user context table
 		 * but we need to decrement ref to get rid of it
 		 */
@@ -563,18 +675,18 @@ static uint32_t chan_poll(handle_t *chandle, uint32_t emask, bool finalize)
 /*
  *  Check if connection to specified port is allowed
  */
-static int check_access(ipc_port_t *port, const uuid_t *uuid)
+static int check_access(uint32_t port_flags, const uuid_t *uuid)
 {
 	if (!uuid)
 		return ERR_ACCESS_DENIED;
 
 	if (is_ns_client(uuid)) {
 		/* check if this port allows connection from NS clients */
-		if (port->flags & IPC_PORT_ALLOW_NS_CONNECT)
+		if (port_flags & IPC_PORT_ALLOW_NS_CONNECT)
 			return NO_ERROR;
 	} else {
 		/* check if this port allows connection from Trusted Apps */
-		if (port->flags & IPC_PORT_ALLOW_TA_CONNECT)
+		if (port_flags & IPC_PORT_ALLOW_TA_CONNECT)
 			return NO_ERROR;
 	}
 
@@ -593,7 +705,7 @@ static int port_attach_client(ipc_port_t *port, ipc_chan_t *client)
 	}
 
 	/* check if we are allowed to connect */
-	ret = check_access(port, client->uuid);
+	ret = check_access(port->flags, client->uuid);
 	if (ret != NO_ERROR) {
 		LTRACEF("access denied: %d\n", ret);
 		return ret;
@@ -660,6 +772,7 @@ int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
 {
 	ipc_port_t *port;
 	ipc_chan_t *client;
+	struct startup_port *startup_port;
 	int ret;
 
 	if (!cid) {
@@ -694,7 +807,16 @@ int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
 		if (ret)
 			goto err_attach_client;
 	} else {
-		if (!(flags & IPC_CONNECT_WAIT_FOR_PORT)) {
+		/*
+		 * Check if an app has registered to be started on connections
+		 * to this port
+		 */
+		startup_port = find_startup_port(path, NULL);
+		if (startup_port && !check_access(startup_port->flags,
+		                                  client->uuid)) {
+			LTRACEF("Requesting app %p start\n", startup_port->app);
+			trusty_app_request_start(startup_port->app);
+                } else if (!(flags & IPC_CONNECT_WAIT_FOR_PORT)) {
 			ret = ERR_NOT_FOUND;
 			goto err_find_ports;
 		}
@@ -707,8 +829,7 @@ int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
 		}
 
 		/* add it to waiting for port list */
-		list_add_tail(&waiting_for_port_chan_list, &client->node);
-		chan_add_ref(client, &client->node_ref);
+		add_to_waiting_for_port_list_locked(client);
 	}
 
 	LTRACEF("new connection: client %p: peer %p\n",
@@ -876,6 +997,28 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 
 	return NO_ERROR;
 }
+
+void ipc_handle_app_exit(struct trusty_app *app)
+{
+	ipc_chan_t *client;
+	struct startup_port *port;
+
+	mutex_acquire(&ipc_port_lock);
+
+	list_for_every_entry(&waiting_for_port_chan_list,
+	                     client, ipc_chan_t, node) {
+		port = find_startup_port(client->path, app);
+		if (port) {
+			if (!check_access(port->flags, client->uuid)) {
+				trusty_app_request_start(port->app);
+				break;
+                        }
+		}
+	}
+
+	mutex_release(&ipc_port_lock);
+}
+
 
 long __SYSCALL sys_accept(uint32_t handle_id, user_addr_t user_uuid)
 {

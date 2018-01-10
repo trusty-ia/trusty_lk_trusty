@@ -229,6 +229,7 @@ SECTIONS
   .trusty_app.manifest (INFO) :
   {
       KEEP (*(.trusty_app.manifest))
+      KEEP (*(.trusty_app.manifest.*))
   }
 
   /* Stabs debugging sections.  */

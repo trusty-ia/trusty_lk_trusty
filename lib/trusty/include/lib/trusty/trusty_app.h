@@ -85,6 +85,19 @@ typedef struct trusty_app
 } trusty_app_t;
 
 void trusty_app_init(void);
+
+/**
+ * trusty_app_request_start() - Request that an application be started
+ * @app: application to be started
+ *
+ * If the application is already running then this function has no effect.
+ * Otherwise the application will be started.
+ *
+ * Return: ERR_ALREADY_STARTED if the application is already running. NO_ERROR
+ * otherwise.
+ */
+status_t trusty_app_request_start(struct trusty_app *app);
+
 void trusty_app_exit(int status) __NO_RETURN;
 status_t trusty_app_setup_mmio(trusty_app_t *trusty_app,
                                u_int mmio_id, vaddr_t *vaddr, uint32_t size);

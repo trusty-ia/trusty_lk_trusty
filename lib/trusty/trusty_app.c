@@ -31,6 +31,7 @@
 #include <kernel/event.h>
 #include <kernel/mutex.h>
 #include <kernel/thread.h>
+#include <lib/trusty/ipc.h>
 #include <malloc.h>
 #include <platform.h>
 #include <stdio.h>
@@ -56,12 +57,15 @@ enum {
     TRUSTY_APP_CONFIG_KEY_MIN_HEAP_SIZE         = 2,
     TRUSTY_APP_CONFIG_KEY_MAP_MEM               = 3,
     TRUSTY_APP_CONFIG_KEY_MGMT_FLAGS            = 4,
+    TRUSTY_APP_CONFIG_KEY_START_PORT            = 5,
 };
 
 enum trusty_app_mgmt_flags {
     TRUSTY_APP_MGMT_FLAGS_NONE                   = 0x0,
     /* Restart application on exit */
     TRUSTY_APP_MGMT_FLAGS_RESTART_ON_EXIT        = 0x1,
+    /* Don't start the application at boot */
+    TRUSTY_APP_MGMT_FLAGS_DEFERRED_START         = 0x2,
 };
 
 #define DEFAULT_MGMT_FLAGS TRUSTY_APP_MGMT_FLAGS_NONE
@@ -274,11 +278,16 @@ err_stack:
     return NULL;
 }
 
-static status_t load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *shdr)
+static status_t load_app_config_options(trusty_app_t *trusty_app,
+                                        Elf32_Shdr *shdr)
 {
-    char  *manifest_data;
+    char *manifest_data;
+    const char *port_name;
+    uint32_t port_name_size;
+    uint32_t port_flags;
     u_int *config_blob, config_blob_size;
     u_int i;
+    status_t ret;
 
     /* have to at least have a valid UUID */
     if (shdr->sh_size < sizeof(uuid_t)) {
@@ -370,9 +379,41 @@ static status_t load_app_config_options(trusty_app_t *trusty_app, Elf32_Shdr *sh
             }
             trusty_app->props.mgmt_flags = config_blob[++i];
             break;
+        case TRUSTY_APP_CONFIG_KEY_START_PORT:
+            /* START_PORT takes at least 3 data values */
+            if (trusty_app->props.config_entry_cnt - i < 4) {
+                dprintf(CRITICAL, "app %u manifest missing START_PORT values\n",
+                        trusty_app->app_id);
+                return ERR_NOT_VALID;
+            }
+
+            port_flags = config_blob[++i];
+            port_name_size = config_blob[++i];
+            port_name = (const char *)&config_blob[++i];
+
+            if (!address_range_within_bounds(port_name, port_name_size,
+                                             config_blob,
+                                             config_blob + config_blob_size)) {
+                dprintf(CRITICAL, "app %u manifest string out of bounds: %p size: 0x%x config_blob: %p config_blob_size: 0x%x\n",
+                        trusty_app->app_id, port_name, port_name_size,
+                        config_blob, config_blob_size);
+                return ERR_NOT_VALID;
+            }
+
+            ret = ipc_register_startup_port(trusty_app, port_name,
+                                            port_name_size, port_flags);
+            if (ret != NO_ERROR) {
+                dprintf(CRITICAL, "app %u failed to register port: %s\n",
+                        trusty_app->app_id, port_name);
+                return ret;
+            }
+
+            i += DIV_ROUND_UP(port_name_size, sizeof(uint32_t)) - 1;
+
+            break;
         default:
-            dprintf(CRITICAL, "app %u manifest contains unknown config key %u\n",
-                    trusty_app->app_id, config_blob[i]);
+            dprintf(CRITICAL, "app %u manifest contains unknown config key %u at %p\n",
+                    trusty_app->app_id, config_blob[i], &config_blob[i]);
             return ERR_NOT_VALID;
         }
     }
@@ -762,10 +803,12 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
     status_t ret;
     u_int i;
     u_int id, offset, size;
+    uint32_t port_name_size;
 
     /* step thru configuration blob looking for I/O mapping requests */
     for (i = 0; i < trusty_app->props.config_entry_cnt; i++) {
-        if (trusty_app->props.config_blob[i] == TRUSTY_APP_CONFIG_KEY_MAP_MEM) {
+        switch (trusty_app->props.config_blob[i]) {
+        case TRUSTY_APP_CONFIG_KEY_MAP_MEM:
             id = trusty_app->props.config_blob[++i];
             offset = trusty_app->props.config_blob[++i];
             size = ROUNDUP(trusty_app->props.config_blob[++i],
@@ -786,9 +829,20 @@ status_t trusty_app_setup_mmio(trusty_app_t *trusty_app, u_int mmio_id,
             dprintf(SPEW, "mmio: vaddr 0x%lx, paddr 0x%x, ret %d\n",
                     *vaddr, offset, ret);
             return ret;
-        } else {
-            /* all other config options take 1 data value */
+        case TRUSTY_APP_CONFIG_KEY_START_PORT:
+            /* START_PORT takes 2 data values plus the aligned port name size */
+            port_name_size = trusty_app->props.config_blob[i + 2];
+            i += 2 + DIV_ROUND_UP(port_name_size, sizeof(uint32_t));
+            break;
+        case TRUSTY_APP_CONFIG_KEY_MIN_STACK_SIZE:
+        case TRUSTY_APP_CONFIG_KEY_MIN_HEAP_SIZE:
+        case TRUSTY_APP_CONFIG_KEY_MGMT_FLAGS:
             i++;
+            break;
+        default:
+            panic("unknown config key 0x%x at %p in config blob of app %d\n",
+                  trusty_app->props.config_blob[i],
+                  &trusty_app->props.config_blob[i], trusty_app->app_id);
         }
     }
 
@@ -959,6 +1013,8 @@ static status_t app_mgr_handle_terminating(struct trusty_app *app)
         app->state = APP_NOT_RUNNING;
     }
 
+    ipc_handle_app_exit(app);
+
     return ret;
 }
 
@@ -1011,12 +1067,19 @@ static void app_mgr_init(void)
         panic("Failed to start app manager thread\n");
 }
 
-static status_t trusty_app_request_start(struct trusty_app *app)
+status_t trusty_app_request_start(struct trusty_app *app)
 {
-    DEBUG_ASSERT(app->state == APP_NOT_RUNNING);
+    int oldstate;
 
-    app->state = APP_STARTING;
-    return event_signal(&app_mgr_event, false);
+    oldstate = atomic_cmpxchg((int *)&app->state, APP_NOT_RUNNING,
+                              APP_STARTING);
+
+    if (oldstate == APP_NOT_RUNNING) {
+        event_signal(&app_mgr_event, false);
+        return NO_ERROR;
+    }
+
+    return ERR_ALREADY_STARTED;
 }
 
 void trusty_app_init(void)
@@ -1061,12 +1124,13 @@ void trusty_app_forall(void (*fn)(trusty_app_t *ta, void *data), void *data)
 static void start_apps(uint level)
 {
     trusty_app_t *trusty_app;
-    int ret;
 
     list_for_every_entry(&trusty_app_list, trusty_app, trusty_app_t, node) {
-        ret = trusty_app_request_start(trusty_app);
-        if (ret != NO_ERROR)
-            panic("Cannot start(%d) Trusty app %u!\n", ret, trusty_app->app_id);
+
+        if (trusty_app->props.mgmt_flags & TRUSTY_APP_MGMT_FLAGS_DEFERRED_START)
+            continue;
+
+        trusty_app_request_start(trusty_app);
     }
 }
 
