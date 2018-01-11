@@ -602,8 +602,8 @@ static status_t alloc_address_map(trusty_app_t *trusty_app)
             trusty_app->app_id, trusty_app->end_bss);
     dprintf(SPEW, "trusty_app %d: brk:  start 0x%08lx end 0x%08lx\n",
             trusty_app->app_id, trusty_app->start_brk, trusty_app->end_brk);
-    dprintf(SPEW, "trusty_app %d: entry 0x%08lx\n", trusty_app->app_id,
-            trusty_app->thread->entry);
+    dprintf(SPEW, "trusty_app %d: entry 0x%08x\n", trusty_app->app_id,
+            elf_hdr->e_entry);
 
     return NO_ERROR;
 }
