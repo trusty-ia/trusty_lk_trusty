@@ -56,7 +56,7 @@ Only syscalls with 4 or less arguments are supported.
 """
 
 copyright_header = """/*
- * Copyright (c) 2013-2017 Google Inc. All rights reserved
+ * Copyright (c) 2012-2018 LK Trusty Authors. All Rights Reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files
@@ -90,13 +90,38 @@ includes_header = "#include <%s>\n"
 # see include/asm.h in lk
 asm_header = "asm.h"
 
-syscall_stub = """
+class Architecture:
+    def __init__(self, syscall_stub):
+        self.syscall_stub = syscall_stub
+
+arch_dict = {
+    "arm" : Architecture (
+        syscall_stub = """
 .section .text.%(sys_fn)s
 FUNCTION(%(sys_fn)s)
     ldr     r12, =__NR_%(sys_fn)s
     swi     #0
     bx      lr
-"""
+"""),
+    "x86_64" : Architecture (
+        syscall_stub = """
+FUNCTION(%(sys_fn)s)
+    pushfq
+    pushq %%rbp
+    pushq %%rbx
+    pushq %%r15
+    movq $__NR_%(sys_fn)s, %%rax
+    leaq .L%(sys_fn)s_sysreturn(%%rip), %%rbx
+    movq %%rsp, %%rbp
+    sysenter
+.L%(sys_fn)s_sysreturn:
+    popq %%r15
+    popq %%rbx
+    popq %%rbp
+    popfq
+    ret
+"""),
+}
 
 syscall_define = "#define __NR_%(sys_fn)s\t\t%(sys_nr)s\n"
 
@@ -174,7 +199,7 @@ def parse_check_def(line):
         return None
 
 
-def process_table(table_file, std_file, stubs_file, verify):
+def process_table(table_file, std_file, stubs_file, verify, arch):
     """
     Process a syscall table and generate:
     1. A sycall stubs file
@@ -202,7 +227,7 @@ def process_table(table_file, std_file, stubs_file, verify):
         if not verify:
             define_lines += syscall_define % params
             proto_lines += syscall_proto % params
-            stub_lines += syscall_stub % params
+            stub_lines += arch.syscall_stub % params
 
 
     tbl.close()
@@ -239,6 +264,9 @@ def main():
     op.add_option("-s", "--stubs-file", type="string",
             dest="stub_file", default=None,
             help="path to syscall assembly stubs file.")
+    op.add_option("-a", "--arch", type="string",
+            dest="arch", default="arm",
+            help="arch of stub assembly files: " + str(arch_dict.keys()))
 
     (opts, args) = op.parse_args()
 
@@ -251,7 +279,8 @@ def main():
             op.print_help()
             sys.exit(1)
 
-    process_table(args[0], opts.std_file, opts.stub_file, opts.verify)
+    process_table(args[0], opts.std_file, opts.stub_file, opts.verify,
+            arch_dict[opts.arch])
 
 
 if __name__ == '__main__':
