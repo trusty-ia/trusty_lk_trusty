@@ -112,10 +112,5 @@ typedef struct {
 
 /* AttKB size is limited to 16KB */
 #define MAX_ATTKB_SIZE     (16*1024)
-#define GET_NONE           0
-#define GET_SEED           (1<<0)
-#define GET_ATTKB          (1<<1)
-#define GET_RPMB_KEY       (1<<2)
-#define GET_ARRKB_ENC_KEY  (1<<3)
 #endif
 
