@@ -130,12 +130,12 @@ static inline void trusty_als_set(struct trusty_app *app, int slot_id,
     app->als[slot] = ptr;
 }
 
-static inline struct trusty_thread *current_trusty_thread()
+static inline struct trusty_thread *current_trusty_thread(void)
 {
     return (struct trusty_thread *)tls_get(TLS_ENTRY_TRUSTY);
 }
 
-static inline trusty_app_t *current_trusty_app()
+static inline trusty_app_t *current_trusty_app(void)
 {
     return current_trusty_thread()->app;
 }
