@@ -60,23 +60,21 @@ $(GENERIC_OBJS): CC := $(GENERIC_CC)
 $(GENERIC_OBJS): FLAGS := $(GENERIC_FLAGS)
 $(GENERIC_OBJS): CFLAGS := $(GENERIC_CFLAGS)
 $(GENERIC_OBJS): CPPFLAGS := $(GENERIC_CPPFLAGS)
-# HACK inject GLOBAL_INCLUDES here because it is late bound.
-$(GENERIC_OBJS): LATE_GLOBAL_INCLUDES = $(subst -I,-idirafter,$(GLOBAL_INCLUDES))
 
 $(GENERIC_C_OBJS): $(GENERIC_OBJ_DIR)/%.o: %.c
 	@echo building $@
 	@$(MKDIR)
-	$(NOECHO)$(CC) $(FLAGS) $(CFLAGS) $(LATE_GLOBAL_INCLUDES) -c $< -MMD -o $@
+	$(NOECHO)$(CC) $(FLAGS) $(CFLAGS) -c $< -MMD -o $@
 
 $(GENERIC_CC_OBJS): $(GENERIC_OBJ_DIR)/%.o: %.cc
 	@echo building $@
 	@$(MKDIR)
-	$(NOECHO)$(CC) $(FLAGS) $(CPPFLAGS) $(LATE_GLOBAL_INCLUDES) -c $< -MMD -o $@
+	$(NOECHO)$(CC) $(FLAGS) $(CPPFLAGS) -c $< -MMD -o $@
 
 $(GENERIC_CPP_OBJS): $(GENERIC_OBJ_DIR)/%.o: %.cpp
 	@echo building $@
 	@$(MKDIR)
-	$(NOECHO)$(CC) $(FLAGS) $(CPPFLAGS) $(LATE_GLOBAL_INCLUDES) -c $< -MMD -o $@
+	$(NOECHO)$(CC) $(FLAGS) $(CPPFLAGS) -c $< -MMD -o $@
 
 # Ensure recompilation on header file change.
 -include $(GENERIC_OBJS:.o=.d)
