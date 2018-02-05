@@ -53,7 +53,7 @@ static struct list_node waiting_for_port_chan_list = LIST_INITIAL_VALUE(waiting_
 
 static struct list_node ipc_port_list = LIST_INITIAL_VALUE(ipc_port_list);
 
-mutex_t ipc_lock = MUTEX_INITIAL_VALUE(ipc_lock);
+static struct mutex ipc_port_lock = MUTEX_INITIAL_VALUE(ipc_port_lock);
 
 static uint32_t port_poll(handle_t *handle, uint32_t emask, bool finalize);
 static void port_shutdown(handle_t *handle);
@@ -64,7 +64,7 @@ static void chan_handle_destroy(handle_t *handle);
 
 static ipc_port_t *port_find_locked(const char *path);
 static int port_attach_client(ipc_port_t *port, ipc_chan_t *client);
-static void chan_shutdown_locked(ipc_chan_t *chan);
+static void chan_shutdown(ipc_chan_t *chan);
 static void chan_add_ref(ipc_chan_t *conn, obj_ref_t *ref);
 static void chan_del_ref(ipc_chan_t *conn, obj_ref_t *ref);
 
@@ -170,11 +170,11 @@ static void port_shutdown(handle_t *phandle)
 	LTRACEF("shutting down port %p\n", port);
 
 	/* detach it from global list if it is in the list */
-	mutex_acquire(&ipc_lock);
+	mutex_acquire(&ipc_port_lock);
 	if (list_in_list(&port->node)) {
 		list_delete(&port->node);
 	}
-	mutex_release(&ipc_lock);
+	mutex_release(&ipc_port_lock);
 
 	/* tear down pending connections */
 	ipc_chan_t *server, *temp;
@@ -226,12 +226,11 @@ int ipc_port_publish(handle_t *phandle)
 	DEBUG_ASSERT(phandle);
 	DEBUG_ASSERT(ipc_is_port(phandle));
 
-	mutex_acquire(&ipc_lock);
-
 	ipc_port_t *port = containerof(phandle, ipc_port_t, handle);
 	DEBUG_ASSERT(!list_in_list(&port->node));
 
 	/* Check for duplicates */
+	mutex_acquire(&ipc_port_lock);
 	if (port_find_locked(port->path)) {
 		LTRACEF("path already exists\n");
 		ret = ERR_ALREADY_EXISTS;
@@ -260,13 +259,13 @@ int ipc_port_publish(handle_t *phandle)
 			if (err) {
 				/* failed to attach port: close channel */
 				LTRACEF("failed (%d) to attach_port\n", err);
-				chan_shutdown_locked(client);
+				chan_shutdown(client);
 			}
 
 			chan_del_ref(client, &tmp_client_ref);   /* drop local ref */
 		}
 	}
-	mutex_release(&ipc_lock);
+	mutex_release(&ipc_port_lock);
 
 	return ret;
 }
@@ -327,12 +326,13 @@ err_port_create:
 }
 
 /*
- *  Look up and port with given name (ipc_lock must be held)
+ *  Look up and port with given name (ipc_port_lock must be held)
  */
 static ipc_port_t *port_find_locked(const char *path)
 {
 	ipc_port_t *port;
 
+	DEBUG_ASSERT(is_mutex_held(&ipc_port_lock));
 	list_for_every_entry(&ipc_port_list, port, ipc_port_t, node) {
 		if (!strcmp(path, port->path))
 			return port;
@@ -348,13 +348,11 @@ static uint32_t port_poll(handle_t *phandle, uint32_t emask, bool finalize)
 	ipc_port_t *port = containerof(phandle, ipc_port_t, handle);
 	uint32_t events = 0;
 
-	mutex_acquire(&ipc_lock);
 	if (port->state != IPC_PORT_STATE_LISTENING)
 		events |= IPC_HANDLE_POLL_ERROR;
 	else if (!list_is_empty(&port->pending_list))
 		events |= IPC_HANDLE_POLL_READY;
 	LTRACEF("%s in state %d events %x\n", port->path, port->state, events);
-	mutex_release(&ipc_lock);
 
 	return events & emask;
 }
@@ -425,6 +423,9 @@ static ipc_chan_t *chan_alloc(uint32_t flags, const uuid_t *uuid)
 	if (!chan)
 		return NULL;
 
+	/* init per channel mutex */
+	mutex_init(&chan->mlock);
+
 	/* init ref object and associated lock */
 	spin_lock_init(&chan->ref_slock);
 	obj_init(&chan->refobj, &tmp_ref);
@@ -447,7 +448,7 @@ static ipc_chan_t *chan_alloc(uint32_t flags, const uuid_t *uuid)
 	return chan;
 }
 
-static void _chan_shutdown_locked(ipc_chan_t *chan)
+static void chan_shutdown_locked(ipc_chan_t *chan)
 {
 	switch (chan->state) {
 	case IPC_CHAN_STATE_CONNECTED:
@@ -464,15 +465,26 @@ static void _chan_shutdown_locked(ipc_chan_t *chan)
 	}
 }
 
-static void chan_shutdown_locked(ipc_chan_t *chan)
+static void chan_shutdown(ipc_chan_t *chan)
 {
 	LTRACEF("chan %p: peer %p\n", chan, chan->peer);
 
-	_chan_shutdown_locked(chan);
-	if (chan->peer) {
-		_chan_shutdown_locked(chan->peer);
-		chan_del_ref(chan->peer, &chan->peer_ref);
-		chan->peer = NULL;
+	mutex_acquire(&chan->mlock);
+	ipc_chan_t *peer = chan->peer;
+	chan->peer = NULL;
+	chan_shutdown_locked(chan);
+	mutex_release(&chan->mlock);
+
+	/*
+	 * if peer exists we are still holding reference to peer chan object
+	 * so it cannot disappear.
+	 */
+	if (peer) {
+		/*  shutdown peer */
+		mutex_acquire(&peer->mlock);
+		chan_shutdown_locked(peer);
+		mutex_release(&peer->mlock);
+		chan_del_ref(peer, &chan->peer_ref);
 	}
 }
 
@@ -483,7 +495,6 @@ static void chan_handle_destroy(handle_t *chandle)
 
 	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 
-	mutex_acquire(&ipc_lock);
 	if (!(chan->flags & IPC_CHAN_FLAG_SERVER)) {
 		/*
 		 * When invoked from client side it is possible that channel
@@ -491,13 +502,14 @@ static void chan_handle_destroy(handle_t *chandle)
 		 * possibility for client side channel. Remove it from that
 		 * list and delete ref.
 		 */
+		mutex_acquire(&ipc_port_lock);
 		if (list_in_list(&chan->node)) {
 			list_delete(&chan->node);
 			chan_del_ref(chan, &chan->node_ref);
 		}
+		mutex_release(&ipc_port_lock);
 	}
-	chan_shutdown_locked(chan);
-	mutex_release(&ipc_lock);
+	chan_shutdown(chan);
 	chan_del_ref(chan, &chan->handle_ref);
 }
 
@@ -509,13 +521,11 @@ static uint32_t chan_poll(handle_t *chandle, uint32_t emask, bool finalize)
 	DEBUG_ASSERT(chandle);
 	DEBUG_ASSERT(ipc_is_channel(chandle));
 
-	/* TODO: finer locking? */
-	mutex_acquire(&ipc_lock);
-
 	ipc_chan_t *chan = containerof(chandle, ipc_chan_t, handle);
 
 	uint32_t events = 0;
 
+	mutex_acquire(&chan->mlock);
 	/*  peer is closing connection */
 	if (chan->state == IPC_CHAN_STATE_DISCONNECTING) {
 		events |= IPC_HANDLE_POLL_HUP;
@@ -546,7 +556,7 @@ static uint32_t chan_poll(handle_t *chandle, uint32_t emask, bool finalize)
 		}
 	}
 
-	mutex_release(&ipc_lock);
+	mutex_release(&chan->mlock);
 	return events;
 }
 
@@ -613,11 +623,17 @@ static int port_attach_client(ipc_port_t *port, ipc_chan_t *client)
 	}
 
 	/* setup cross peer refs */
+	mutex_acquire(&client->mlock);
+	if (client->state == IPC_CHAN_STATE_DISCONNECTING) {
+		mutex_release(&client->mlock);
+		goto err_closed;
+	}
 	chan_add_ref(server, &client->peer_ref);
 	client->peer = server;
 
 	chan_add_ref(client, &server->peer_ref);
 	server->peer = client;
+	mutex_release(&client->mlock);
 
 	/* and add server channel to pending connection list */
 	chan_add_ref(server, &server->node_ref);
@@ -628,6 +644,7 @@ static int port_attach_client(ipc_port_t *port, ipc_chan_t *client)
 
 	return NO_ERROR;
 
+err_closed:
 err_server_mq:
 err_client_mq:
 	handle_decref(&server->handle);
@@ -668,7 +685,7 @@ int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
 
 	LTRACEF("Connecting to '%s'\n", path);
 
-	mutex_acquire(&ipc_lock);
+	mutex_acquire(&ipc_port_lock);
 
 	port = port_find_locked(path);
 	if (port) {
@@ -705,7 +722,7 @@ int ipc_port_connect_async(const uuid_t *cid, const char *path, size_t max_path,
 err_alloc_path:
 err_attach_client:
 err_find_ports:
-	mutex_release(&ipc_lock);
+	mutex_release(&ipc_port_lock);
 	handle_decref(&client->handle);
 	return ret;
 }
@@ -812,15 +829,14 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 		return ERR_CHANNEL_CLOSED;
 	}
 
-	mutex_acquire(&ipc_lock);
-
 	/* get next pending connection */
+	mutex_acquire(&ipc_port_lock);
 	server = list_remove_head_type(&port->pending_list, ipc_chan_t, node);
+	mutex_release(&ipc_port_lock);
 	if (!server) {
 		/* TODO: should we block waiting for a new connection if one
 		 * is not pending? if so, need an optional argument maybe.
 		 */
-		mutex_release(&ipc_lock);
 		return ERR_NO_MSG;
 	}
 
@@ -833,13 +849,13 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 
 	/* there must be a client, it must be in CONNECTING state and
 	   server must be in ACCEPTING state */
-	if (!client ||
-	    server->state != IPC_CHAN_STATE_ACCEPTING ||
+	ASSERT(client);
+	mutex_acquire(&client->mlock);
+	if (server->state != IPC_CHAN_STATE_ACCEPTING ||
 	    client->state != IPC_CHAN_STATE_CONNECTING) {
 		LTRACEF("Drop connection: client %p (0x%x) to server %p (0x%x):\n",
-			client, client ? client->state : 0xDEADBEEF,
-			server, server->state);
-		mutex_release(&ipc_lock);
+			client, client->state, server, server->state);
+		mutex_release(&client->mlock);
 		handle_decref(&server->handle);
 		return ERR_CHANNEL_CLOSED;
 	}
@@ -853,7 +869,7 @@ int ipc_port_accept(handle_t *phandle, handle_t **chandle_ptr,
 	*chandle_ptr = &server->handle;
 	*uuid_ptr = client->uuid;
 
-	mutex_release(&ipc_lock);
+	mutex_release(&client->mlock);
 
 	/* notify client */
 	handle_notify(&client->handle);

@@ -122,6 +122,8 @@ typedef struct ipc_chan {
 	  *      of this field.
 	 */
 	const char		*path;
+
+	struct mutex		mlock;
 } ipc_chan_t;
 
 /* called by server to create port */
