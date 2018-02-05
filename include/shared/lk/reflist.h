@@ -25,8 +25,8 @@
 #define __REFLIST_H
 
 #include <assert.h>
-#include <compiler.h>
-#include <list.h>
+#include <lk/compiler.h>
+#include <lk/list.h>
 
 typedef struct obj_ref {
 	struct list_node ref_node;

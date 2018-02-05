@@ -23,8 +23,8 @@
 #ifndef __ERR_PTR_H
 #define __ERR_PTR_H
 
-#include <compiler.h>
-#include <err.h>
+#include <lk/compiler.h>
+#include <uapi/err.h>
 #include <stdbool.h>
 #include <stdint.h>
 
