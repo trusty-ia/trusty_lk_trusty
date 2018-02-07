@@ -26,10 +26,11 @@
 #include <compiler.h>
 #include <err.h>
 #include <stdbool.h>
+#include <stdint.h>
 
-static inline status_t PTR_ERR(const void *ptr)
+static inline int PTR_ERR(const void *ptr)
 {
-	return (status_t)(intptr_t)ptr;
+	return (int)(intptr_t)ptr;
 }
 
 static inline __ALWAYS_INLINE bool IS_ERR(const void *ptr)
