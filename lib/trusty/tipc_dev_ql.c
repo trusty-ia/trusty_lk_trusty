@@ -537,7 +537,7 @@ long ql_tipc_handle_cmd(ns_addr_t buf_pa, ns_size_t cmd_sz)
 
 	/* check for minimum size */
 	if (cmd_sz < sizeof(cmd_hdr)) {
-		LTRACEF("message is too short (%zd)\n", cmd_sz);
+		LTRACEF("message is too short (%zd)\n", (size_t)cmd_sz);
 		return SM_ERR_INVALID_PARAMETERS;
 	}
 
