@@ -42,12 +42,12 @@
 
 ulong generic_arm64_smc(ulong r0, ulong r1, ulong r2, ulong r3)
 {
-	register ulong _r0 asm(SMC_ARG0) = r0;
-	register ulong _r1 asm(SMC_ARG1) = r1;
-	register ulong _r2 asm(SMC_ARG2) = r2;
-	register ulong _r3 asm(SMC_ARG3) = r3;
+	register ulong _r0 __asm__(SMC_ARG0) = r0;
+	register ulong _r1 __asm__(SMC_ARG1) = r1;
+	register ulong _r2 __asm__(SMC_ARG2) = r2;
+	register ulong _r3 __asm__(SMC_ARG3) = r3;
 
-	asm volatile(
+	__asm__ volatile(
 		SMC_ARCH_EXTENSION
 		"smc	#0"	/* switch to secure world */
 		: "=r" (_r0), "=r" (_r1), "=r" (_r2), "=r" (_r3)
