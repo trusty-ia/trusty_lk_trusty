@@ -107,7 +107,7 @@ void platform_init_mmu_mappings(void)
 	 * matching ram_arena (by name) and adjust it.
 	 */
 	struct mmu_initial_mapping *m = mmu_initial_mappings;
-	for (int i = 0; i < countof(mmu_initial_mappings); i++, m++) {
+	for (size_t i = 0; i < countof(mmu_initial_mappings); i++, m++) {
 		if (!(m->flags & MMU_INITIAL_MAPPING_FLAG_DYNAMIC))
 			continue;
 
