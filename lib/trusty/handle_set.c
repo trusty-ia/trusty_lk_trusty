@@ -249,9 +249,11 @@ void handle_set_detach_ref(struct handle_ref *ref)
     if (ref->parent) {
         struct handle_set *hset = containerof(ref->parent,
                                               struct handle_set, handle);
+        handle_incref(&hset->handle);
         mutex_acquire(&hset->mlock);
         hset_detach_ref_locked(hset, ref);
         mutex_release(&hset->mlock);
+        handle_decref(&hset->handle);
     }
 }
 
