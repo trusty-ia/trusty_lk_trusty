@@ -31,8 +31,6 @@ PHDRS
   data PT_LOAD;
 }
 
-EXTERN(trusty_app_manifest)
-
 ENTRY(_start)
 SECTIONS
 {
@@ -227,6 +225,12 @@ SECTIONS
   . = ALIGN(32 / 8);
   __end__ = . ;
   _end = .; PROVIDE (end = .);
+
+  .trusty_app.manifest (INFO) :
+  {
+      KEEP (*(.trusty_app.manifest))
+  }
+
   /* Stabs debugging sections.  */
   .stab          0 : { *(.stab) }
   .stabstr       0 : { *(.stabstr) }
