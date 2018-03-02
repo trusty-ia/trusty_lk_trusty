@@ -111,10 +111,12 @@ static event_t app_mgr_event = EVENT_INITIAL_VALUE(app_mgr_event, 0,
             (u)->clock_seq_and_node[6],                 \
             (u)->clock_seq_and_node[7]);
 
-static bool address_range_within_bounds(void *range_start, size_t range_size,
-                                        void *lower_bound, void *upper_bound)
+static bool address_range_within_bounds(const void *range_start,
+                                        size_t range_size,
+                                        const void *lower_bound,
+                                        const void *upper_bound)
 {
-    void *range_end = range_start + range_size;
+    const void *range_end = range_start + range_size;
 
     if (upper_bound < lower_bound) {
         LTRACEF("upper bound(%p) is below upper bound(%p)\n",
@@ -143,13 +145,13 @@ static bool address_range_within_bounds(void *range_start, size_t range_size,
    return true;
 }
 
-static inline bool address_range_within_img(void *range_start,
+static inline bool address_range_within_img(const void *range_start,
                                             size_t range_size,
-                                            struct trusty_app_img *app_img)
+                                            const struct trusty_app_img *appimg)
 {
     return address_range_within_bounds(range_start, range_size,
-                                       (void *)app_img->img_start,
-                                       (void *)app_img->img_end);
+                                       (const void *)appimg->img_start,
+                                       (const void *)appimg->img_end);
 }
 
 static bool compare_section_name(Elf32_Shdr *shdr, const char *name,
