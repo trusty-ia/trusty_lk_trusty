@@ -39,10 +39,14 @@ endif
 
 ifeq ($(call TOBOOL,$(CLANGBUILD)),true)
 HOST_CC := $(CLANG_BINDIR)/clang
+HOST_SANITIZER_FLAGS := -fsanitize=address -fno-omit-frame-pointer
+HOST_RUN_ENV := ASAN_OPTIONS=symbolize=1 ASAN_SYMBOLIZER_PATH=$(CLANG_BINDIR)/llvm-symbolizer
 else
 # TODO: use hermetic version of GCC.
 # To do this, we'd need to compile boringssl from source rather than using a system library.
 HOST_CC := gcc
+HOST_SANITIZER_FLAGS :=
+HOST_RUN_ENV :=
 endif
 
 HOST_INCLUDE_DIRS += $(GLOBAL_UAPI_INCLUDES) $(GLOBAL_SHARED_INCLUDES) $(GLOBAL_USER_INCLUDES)
@@ -51,7 +55,7 @@ HOST_INCLUDE_DIRS += $(GLOBAL_UAPI_INCLUDES) $(GLOBAL_SHARED_INCLUDES) $(GLOBAL_
 GENERIC_CC := $(HOST_CC)
 GENERIC_SRCS := $(HOST_SRCS)
 GENERIC_OBJ_DIR := $(SAVED_BUILDDIR)/host_tests/obj/$(HOST_TEST)
-GENERIC_FLAGS := $(HOST_FLAGS) -O1 -g -Wall -Wextra -Wno-unused-parameter -Werror $(addprefix -I, $(HOST_INCLUDE_DIRS))
+GENERIC_FLAGS := $(HOST_FLAGS) -O1 -g -Wall -Wextra -Wno-unused-parameter -Werror $(HOST_SANITIZER_FLAGS) $(addprefix -I, $(HOST_INCLUDE_DIRS))
 GENERIC_CFLAGS := -std=c11 -D_POSIX_C_SOURCE=199309 -Wno-missing-field-initializers
 GENERIC_CPPFLAGS := -std=c++11
 include make/generic_compile.mk
@@ -59,7 +63,7 @@ include make/generic_compile.mk
 # Link
 HOST_TEST_BIN := $(SAVED_BUILDDIR)/host_tests/$(HOST_TEST)
 $(HOST_TEST_BIN): CC := $(HOST_CC)
-$(HOST_TEST_BIN): LDFLAGS := -g $(addprefix -l, $(HOST_LIBS))
+$(HOST_TEST_BIN): LDFLAGS := -g $(HOST_SANITIZER_FLAGS) $(addprefix -l, $(HOST_LIBS))
 $(HOST_TEST_BIN): $(GENERIC_OBJS)
 	@echo linking $@
 	@$(MKDIR)
@@ -68,9 +72,10 @@ $(HOST_TEST_BIN): $(GENERIC_OBJS)
 # Aliases
 host_tests: $(HOST_TEST_BIN)
 
+run_$(HOST_TEST): RUN_ENV := $(HOST_RUN_ENV)
 run_$(HOST_TEST): $(HOST_TEST_BIN) .PHONY
 	@echo running $<
-	$(NOECHO)gdb -batch -ex run -ex where $<
+	$(NOECHO)$(RUN_ENV) gdb -batch -ex run -ex where $<
 
 run_host_tests: run_$(HOST_TEST) .PHONY
 
@@ -82,6 +87,8 @@ HOST_FLAGS :=
 HOST_LIBS :=
 # Cleanup internal
 HOST_CC :=
+HOST_SANITIZER_FLAGS :=
+HOST_RUN_ENV :=
 HOST_TEST_BIN :=
 HOST_OBJ_DIR :=
 GENERIC_OBJS :=
