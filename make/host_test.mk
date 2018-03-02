@@ -37,7 +37,13 @@ ifeq ($(HOST_SRCS), )
 $(error HOST_SRCS must be specified)
 endif
 
+ifeq ($(call TOBOOL,$(CLANGBUILD)),true)
+HOST_CC := $(CLANG_BINDIR)/clang
+else
+# TODO: use hermetic version of GCC.
+# To do this, we'd need to compile boringssl from source rather than using a system library.
 HOST_CC := gcc
+endif
 
 HOST_INCLUDE_DIRS += $(GLOBAL_UAPI_INCLUDES) $(GLOBAL_SHARED_INCLUDES) $(GLOBAL_USER_INCLUDES)
 
