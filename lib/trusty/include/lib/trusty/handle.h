@@ -44,10 +44,15 @@ enum {
 	IPC_HANDLE_POLL_SEND_UNBLOCKED = 0x10,
 };
 
+enum handle_flags {
+	HANDLE_FLAG_NO_SEND = (1U << 0),
+};
+
 struct handle_ops;
 
 typedef struct handle {
 	refcount_t		refcnt;
+	uint32_t		flags;
 
 	struct handle_ops	*ops;
 
@@ -133,7 +138,12 @@ typedef struct handle_list {
 }
 
 /* handle management */
-void handle_init(handle_t *handle, struct handle_ops *ops);
+void handle_init_etc(handle_t *handle, struct handle_ops *ops, uint32_t flags);
+
+static inline void handle_init(handle_t *handle, struct handle_ops *ops)
+{
+	handle_init_etc(handle, ops, 0);
+}
 void handle_close(handle_t *handle);
 
 void handle_incref(handle_t *handle);
@@ -164,5 +174,10 @@ void handle_list_del(handle_list_t *hlist, handle_t *handle);
 void handle_list_delete_all(handle_list_t *hlist);
 int handle_list_wait(handle_list_t *hlist, handle_t **handle_ptr,
 		     uint32_t *event_ptr, lk_time_t timeout);
+
+static inline bool handle_is_sendable(struct handle *h)
+{
+	return !(h->flags & HANDLE_FLAG_NO_SEND);
+}
 
 #endif

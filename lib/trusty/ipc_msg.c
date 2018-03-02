@@ -226,6 +226,11 @@ static ssize_t kern_msg_write_locked(struct ipc_msg_queue *mq,
 			goto err_bad_handle;
 		}
 
+		if (!handle_is_sendable(msg->handles[i])) {
+			ret = ERR_NOT_ALLOWED;
+			goto err_bad_handle;
+		}
+
 		/* grab an additional reference */
 		handle_incref(msg->handles[i]);
 		item->handles[i] = msg->handles[i];
@@ -282,10 +287,16 @@ static ssize_t user_msg_write_locked(struct ipc_msg_queue *mq,
 			goto err_get;
 		}
 		item->num_handles++;
+
+		if (!handle_is_sendable(item->handles[i])) {
+			rc = ERR_NOT_ALLOWED;
+			goto err_send;
+		}
 	}
 
 	return ret;
 
+err_send:
 err_get:
 	for (uint i = 0; i < item->num_handles; i++) {
 		handle_decref(item->handles[i]);

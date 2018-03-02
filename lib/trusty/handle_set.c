@@ -116,7 +116,7 @@ static void hset_init(struct handle_set *hset)
     mutex_init(&hset->mlock);
     list_initialize(&hset->ref_list);
     list_initialize(&hset->ready_list);
-    handle_init(&hset->handle, &hset_ops);
+    handle_init_etc(&hset->handle, &hset_ops, HANDLE_FLAG_NO_SEND);
 }
 
 struct handle *handle_set_create(void)

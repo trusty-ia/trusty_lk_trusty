@@ -40,13 +40,14 @@
 #include <lib/syscall.h>
 #include <lib/trusty/handle.h>
 
-void handle_init(handle_t *handle, struct handle_ops *ops)
+void handle_init_etc(handle_t *handle, struct handle_ops *ops, uint32_t flags)
 {
 	DEBUG_ASSERT(handle);
 	DEBUG_ASSERT(ops);
 	DEBUG_ASSERT(ops->destroy);
 
 	refcount_init(&handle->refcnt);
+	handle->flags = flags;
 	handle->ops = ops;
 	handle->wait_event = NULL;
 	spin_lock_init(&handle->slock);
