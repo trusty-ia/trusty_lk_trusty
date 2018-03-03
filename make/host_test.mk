@@ -57,14 +57,14 @@ $(HOST_TEST_BIN): LDFLAGS := -g $(addprefix -l, $(HOST_LIBS))
 $(HOST_TEST_BIN): $(GENERIC_OBJS)
 	@echo linking $@
 	@$(MKDIR)
-	@$(CC) $^ $(LDFLAGS) -o $@
+	$(NOECHO)$(CC) $^ $(LDFLAGS) -o $@
 
 # Aliases
 host_tests: $(HOST_TEST_BIN)
 
 run_$(HOST_TEST): $(HOST_TEST_BIN) .PHONY
 	@echo running $<
-	@gdb -batch -ex run -ex where $<
+	$(NOECHO)gdb -batch -ex run -ex where $<
 
 run_host_tests: run_$(HOST_TEST) .PHONY
 
