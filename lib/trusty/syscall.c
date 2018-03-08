@@ -35,8 +35,6 @@
 #include <uthread.h>
 #include <lib/trusty/sys_fd.h>
 #include <lib/trusty/trusty_app.h>
-#include <platform/sand.h>
-#include <lib/trusty/trusty_device_info.h>
 
 static int32_t sys_std_write(uint32_t fd, user_addr_t user_ptr, uint32_t size);
 
