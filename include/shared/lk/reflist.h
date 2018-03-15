@@ -25,8 +25,8 @@
 #define __REFLIST_H
 
 #include <assert.h>
-#include <compiler.h>
-#include <list.h>
+#include <lk/compiler.h>
+#include <lk/list.h>
 
 typedef struct obj_ref {
 	struct list_node ref_node;
@@ -69,11 +69,10 @@ bool obj_del_ref(obj_t *obj, obj_ref_t *ref, obj_destroy_func destroy)
 	bool dead;
 
 	assert(list_in_list(&ref->ref_node));
-	assert(destroy);
 
 	list_delete(&ref->ref_node);
 	dead = list_is_empty(&obj->ref_list);
-	if (dead)
+	if (dead && destroy)
 		destroy(obj);
 	return dead;
 }
