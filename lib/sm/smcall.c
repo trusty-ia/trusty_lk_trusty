@@ -166,6 +166,7 @@ smc32_handler_t sm_fastcall_function_table[] = {
 #endif
 	[SMC_FUNCTION(SMC_FC_API_VERSION)] = smc_sm_api_version,
 #if WITH_SM_WALL
+	[SMC_FUNCTION(SMC_FC_GET_WALL_SIZE_DUP)] = smc_get_wall_size,
 	[SMC_FUNCTION(SMC_FC_GET_WALL_SIZE)] = smc_get_wall_size,
 #endif
 };
