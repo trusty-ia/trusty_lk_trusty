@@ -532,4 +532,4 @@ static void sm_release_boot_args(uint level)
 				"at the end of initialzation!\n");
 }
 
-LK_INIT_HOOK(libsm_bootargs, sm_release_boot_args, LK_INIT_LEVEL_LAST);
+LK_INIT_HOOK(libsm_bootargs, sm_release_boot_args, LK_INIT_LEVEL_LAST-1);
