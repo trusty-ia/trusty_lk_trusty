@@ -140,6 +140,8 @@ static struct tipc_ept *ept_lookup(struct ql_tipc_dev *dev, uint32_t local)
 	uint slot = addr_to_slot(local);
 	if (slot < QL_TIPC_ADDR_MAX_NUM) {
 		if (bitmap_test(dev->inuse, slot)) {
+			/* Add memory barrier to fix spectre v1 */
+			smp_rmb();
 			return &dev->epts[slot];
 		}
 	}
@@ -300,6 +302,8 @@ static int dev_connect(struct ql_tipc_dev *dev, void *ns_payload,
 	if (ns_payload_len >= sizeof(req))
 		return set_status(dev, opcode, ERR_INVALID_ARGS, 0);
 
+	/* Add memory barrier to fix spectre v1 */
+	smp_rmb();
 	/* copy out and zero terminate */
 	memcpy(&req, ns_payload, ns_payload_len);
 	req.body[ns_payload_len - sizeof(req.hdr)] = 0;
