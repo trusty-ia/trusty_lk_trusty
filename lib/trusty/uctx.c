@@ -321,7 +321,6 @@ out:
 	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
 	                                handle_id, ret);
 
-	thread_yield();
 	return ret;
 }
 
@@ -369,7 +368,6 @@ out:
 	LTRACEF("[%p][%d]: ret = %d\n", uthread_get_current(),
 	                                tmp_event.handle, ret);
 
-	thread_yield();
 	return ret;
 }
 
