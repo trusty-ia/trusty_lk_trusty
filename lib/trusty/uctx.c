@@ -463,7 +463,6 @@ int uctx_handle_remove(uctx_t *ctx, handle_id_t handle_id, handle_t **handle_ptr
 	struct handle *handle;
 
 	DEBUG_ASSERT(ctx);
-	DEBUG_ASSERT(handle_ptr);
 
 	mutex_acquire(&ctx->mlock);
 	ret = _check_handle_id(ctx, handle_id);
