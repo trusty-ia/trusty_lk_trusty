@@ -38,6 +38,17 @@ extern uint64_t __tss_end;
 extern void x86_syscall(void);
 volatile uint64_t current_stack[SMP_MAX_CPUS];
 
+#if defined (STACK_PROTECTOR) && defined (__clang__)
+struct _stack_guard_segment {
+    /* clang hardcodes the stack cookie offset as 0x28 on x86-64 */
+    uint8_t padding[40];
+    uint64_t stack_guard;
+};
+
+void *start_fs_base = NULL;
+#define STACK_GUARD_SEGMENT_SIZE 0x30
+#endif
+
 /******************************************************************************
   This is a part where all x86 specific user space initalization is done.
   1. Set up user TSS
@@ -184,6 +195,38 @@ void arch_uthread_startup(void)
     if(paddr)
         *(uint32_t *)sp_usr = 0x0;
 
+#if defined (STACK_PROTECTOR) && defined (__clang__)
+    status_t err;
+    struct _stack_guard_segment stack_guard_segment;
+
+    if(!start_fs_base)
+        start_fs_base = memalign(PAGE_SIZE, PAGE_SIZE);
+
+    if(ut->id * STACK_GUARD_SEGMENT_SIZE > PAGE_SIZE) {
+        dprintf(CRITICAL, "fs base over flow one page!\n");
+        return;
+    }
+
+    err = uthread_map_contig(ut, &ut->arch.fs_base, vaddr_to_paddr(start_fs_base),
+            PAGE_SIZE,
+            UTM_W | UTM_R,
+            UT_MAP_ALIGN_4KB);
+    if(err) {
+        dprintf(CRITICAL, "failed to map fs base!\n");
+        return;
+    }
+
+    ut->arch.fs_base += (ut->id - 1) * STACK_GUARD_SEGMENT_SIZE;
+    (void)get_rand_64(&stack_guard_segment.stack_guard);
+    err = arch_copy_to_user(ut->arch.fs_base,
+                      &stack_guard_segment, sizeof(stack_guard_segment));
+    if(err) {
+        dprintf(CRITICAL, "failed to copy to fs base!\n");
+        return;
+    }
+    write_msr(X86_MSR_FS_BASE, (uint64_t)ut->arch.fs_base);
+#endif
+
     write_msr(X86_MSR_KRNL_GS_BASE, 0);
     __asm__ __volatile__ (
             "pushq %0   \n\t"
@@ -196,7 +239,9 @@ void arch_uthread_startup(void)
             "swapgs \n\t"
             "movw %%ax, %%ds    \n\t"
             "movw %%ax, %%es    \n\t"
+ #if !defined(STACK_PROTECTOR) || !defined (__clang__)
             "movw %%ax, %%fs    \n\t"
+ #endif
             "movw %%ax, %%gs    \n\t"
             "iretq"
             :
@@ -213,6 +258,14 @@ void arch_uthread_context_switch(struct uthread *old_ut, struct uthread *new_ut)
      * In the given scheme, eip and esp changes happen on external/lk.
      * User space specific changes happen here. Which includes tss and gs
      */
+#if defined (STACK_PROTECTOR) && defined (__clang__)
+    if(old_ut)
+        old_ut->arch.fs_base = read_msr(X86_MSR_FS_BASE);
+
+    if(new_ut)
+        write_msr(X86_MSR_FS_BASE, new_ut->arch.fs_base);
+#endif
+
     if (new_ut) {
         /* userspace thread */
         current_stack[cpu_id] = new_ut->arch.kstack;
