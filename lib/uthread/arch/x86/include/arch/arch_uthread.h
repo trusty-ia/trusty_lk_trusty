@@ -47,6 +47,9 @@ struct arch_uthread
 	uint32_t asid;
 	vaddr_t kstack;
 	struct uthread *uthread;
+#if defined (STACK_PROTECTOR) && defined (__clang__)
+	vaddr_t fs_base;
+#endif
 };
 
 #endif
