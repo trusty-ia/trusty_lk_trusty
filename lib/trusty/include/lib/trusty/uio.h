@@ -29,12 +29,12 @@
 
 typedef struct iovec_kern {
 	void		*base;
-	size_t		len;
+	uint32_t		len;
 } iovec_kern_t;
 
 typedef struct iovec_user {
 	user_addr_t	base;
-	size_t	len;
+	uint32_t	len;
 } iovec_user_t;
 
 
