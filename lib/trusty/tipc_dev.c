@@ -154,7 +154,7 @@ typedef int (*tipc_data_cb_t) (uint8_t *dst, size_t sz, void *ctx);
 
 static int
 tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
-               tipc_data_cb_t cb, void *cb_ctx,  size_t data_len,
+               tipc_data_cb_t cb, void *cb_ctx,  uint32_t data_len,
                bool wait);
 
 static int
@@ -458,7 +458,7 @@ static int handle_rx_msg(struct tipc_dev *dev, struct vqueue_buf *buf)
 {
 	const volatile struct tipc_hdr *ns_hdr;
 	const volatile void *ns_data;
-	size_t ns_data_len;
+	uint32_t ns_data_len;
 	uint32_t  src_addr;
 	uint32_t  dst_addr;
 
@@ -496,7 +496,7 @@ static int handle_rx_msg(struct tipc_dev *dev, struct vqueue_buf *buf)
 
 	/* check message size */
 	if (buf->in_iovs.iovs[0].len < sizeof(struct tipc_hdr)) {
-		LTRACEF("msg too short %zu\n", buf->in_iovs.iovs[0].len);
+		LTRACEF("msg too short %u", buf->in_iovs.iovs[0].len);
 		ret = ERR_INVALID_ARGS;
 		goto done;
 	}
@@ -508,7 +508,7 @@ static int handle_rx_msg(struct tipc_dev *dev, struct vqueue_buf *buf)
 	dst_addr = ns_hdr->dst;
 
 	if (ns_data_len + sizeof(struct tipc_hdr) != buf->in_iovs.iovs[0].len) {
-		LTRACEF("malformed message len %zu msglen %zu\n",
+		LTRACEF("malformed message len %u msglen %u\n",
 			ns_data_len, buf->in_iovs.iovs[0].len);
 		ret = ERR_INVALID_ARGS;
 		goto done;
@@ -1007,7 +1007,7 @@ static status_t tipc_vdev_kick_vq(struct vdev *vd, uint vqid)
 
 static int
 tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
-               tipc_data_cb_t cb, void *cb_ctx,  size_t data_len,
+               tipc_data_cb_t cb, void *cb_ctx,  uint32_t data_len,
                bool wait)
 {
 	paddr_t out_phys[MAX_TX_IOVS];
@@ -1022,7 +1022,7 @@ tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
 	if (!cb)
 		return ERR_INVALID_ARGS;
 
-	size_t ttl_len =
+	uint32_t ttl_len =
 	sizeof(struct tipc_hdr) + data_len;
 
 	memset(&buf, 0, sizeof(buf));
@@ -1067,7 +1067,7 @@ tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
 	/* the first iovec should be large enough to hold header */
 	if (sizeof(struct tipc_hdr) > buf.out_iovs.iovs[0].len) {
 		/* not enough space to even place header */
-		LTRACEF("buf is too small (%zu < %zu)\n",
+		LTRACEF("buf is too small (%u < %u)\n",
 		         buf.out_iovs.iovs[0].len, ttl_len);
 		ret = ERR_NOT_ENOUGH_BUFFER;
 		goto done;
@@ -1089,7 +1089,7 @@ tipc_send_data(struct tipc_dev *dev, uint32_t local, uint32_t remote,
 		if (ttl_len > buf.out_iovs.iovs[0].len) {
 			/* not enough space to put the whole message
 			   so it will be truncated */
-			LTRACEF("buf is too small (%zu < %zu)\n",
+			LTRACEF("buf is too small (%d < %d)\n",
 			         buf.out_iovs.iovs[0].len, ttl_len);
 			data_len = buf.out_iovs.iovs[0].len -
 			           sizeof(struct tipc_hdr);
