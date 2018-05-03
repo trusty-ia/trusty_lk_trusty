@@ -88,7 +88,7 @@ enum {
 };
 
 #define IPC_CHAN_MAX_BUFS	32
-#define IPC_CHAN_MAX_BUF_SIZE	(68*1024)
+#define IPC_CHAN_MAX_BUF_SIZE	4096
 
 typedef struct ipc_chan {
 	obj_t			refobj;

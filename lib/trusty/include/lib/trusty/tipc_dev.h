@@ -27,7 +27,6 @@
 #include <arch/defines.h>
 #include <remoteproc/remoteproc.h>
 #include <lib/trusty/uuid.h>
-#include <lib/trusty/ipc.h>
 
 struct tipc_dev;
 
@@ -88,7 +87,7 @@ static const struct tipc_vdev_descr _nm = {                          \
 		},                                                   \
 	},                                                           \
 	.config = {                                                  \
-		.msg_buf_max_size  = IPC_CHAN_MAX_BUF_SIZE,                      \
+		.msg_buf_max_size  = PAGE_SIZE,                      \
 		.msg_buf_alignment = PAGE_SIZE,                      \
 		.dev_name = _nd_name                                 \
 	}                                                            \
