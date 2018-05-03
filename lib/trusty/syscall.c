@@ -269,29 +269,20 @@ long sys_finish_dma(user_addr_t uaddr, uint32_t size, uint32_t flags)
 
 #endif
 
-typedef struct ta_permission {
-	uuid_t uuid;
-	uint32_t permission;
-} ta_permission_t;
-
-static bool ta_permission_check(uint32_t flags)
+static bool valid_ta_to_retrieve_seed(void)
 {
-	ta_permission_t ta_permission_matrix[] = {
-		{HWCRYPTO_SRV_APP_UUID, GET_SEED},
-		{KEYMASTER_SRV_APP_UUID, GET_ATTKB}
+	uuid_t white_list[] = {
+		HWCRYPTO_SRV_APP_UUID,
+		KEYMASTER_SRV_APP_UUID
+		/* Add more TAs which are trusted to retrieve the seed */
 		};
 	uint i;
 
 	trusty_app_t *trusty_app = uthread_get_current()->private_data;
-	for (i = 0; i < sizeof(ta_permission_matrix)/sizeof(ta_permission_matrix[0]); i++) {
-		/* check uuid and flags matches the permission matrix */
-		if (!memcmp(&trusty_app->props.uuid, &ta_permission_matrix[i].uuid, sizeof(uuid_t))) {
-			if((flags & ta_permission_matrix[i].permission) == flags) {
-				return true;
-			} else {
-				return false;
-			}
-		}
+	for (i=0; i<sizeof(white_list)/sizeof(white_list[0]); i++) {
+		/* matches one in the whitelist */
+		if (!memcmp(&trusty_app->props.uuid, &white_list[i], sizeof(uuid_t)))
+			return true;
 	}
 	return false;
 }
@@ -300,81 +291,40 @@ static bool ta_permission_check(uint32_t flags)
  * Based on the design the IMR region for LK will reserved some bytes for ROT
  * and seed storage (size = sizeof(seed_response_t)+sizeof(rot_data_t))
  */
-long sys_get_device_info(user_addr_t info, uint32_t flags)
+long sys_get_device_info(user_addr_t info, bool need_seed)
 {
 	long ret = 0;
-	trusty_device_info_t *dev_info = NULL;
-	uint32_t copy_to_user_size = sizeof(trusty_device_info_t);
-	uint8_t *attkb = NULL, *attkb_page_aligned = NULL;
-	uint32_t attkb_size = 0;
+	trusty_device_info_t dev_info;
 
-	if (flags && (!ta_permission_check(flags))) {
-		return ERR_NOT_ALLOWED;
-	}
+	if (need_seed && !valid_ta_to_retrieve_seed())
+		panic("the caller is invalid!\n");
 
 	if(g_trusty_startup_info.size_of_this_struct != sizeof(trusty_startup_info_t))
 		panic("trusty_startup_info_t size mismatch!\n");
 
 	/* make sure the shared structure are same in tos loader, LK kernel */
-	if(g_dev_info->size != ATTKB_INFO_OFFSET)
+	if(g_dev_info->size != sizeof(trusty_device_info_t))
 		panic("trusty_device_info_t size mismatch!\n");
 
-	if(flags & GET_ATTKB) {
-		copy_to_user_size += MAX_ATTKB_SIZE;
-	}
-	dev_info = (trusty_device_info_t *)malloc(copy_to_user_size);
-
-	if(!dev_info) {
-		dprintf(INFO, "failed to malloc dev_info!\n");
-		return ERR_NO_MEMORY;
-	}
-
 	/* memcpy may result to klocwork scan error, so size is checked before memcpy is called. */
-	memcpy_s(dev_info, ATTKB_INFO_OFFSET, g_dev_info, g_dev_info->size);
+	memcpy(&dev_info, g_dev_info, sizeof(trusty_device_info_t));
 
-	dev_info->size = copy_to_user_size;
+	/* for Km1.0 no need the osVersion and patchMonthYear */
+	dev_info.rot.osVersion = 0;
+	dev_info.rot.patchMonthYear = 0;
 
-	/* for KM 1.0 no need the osVersion and patchMonthYear */
-	dev_info->rot.osVersion = 0;
-	dev_info->rot.patchMonthYear = 0;
+	if (!need_seed)
+		/* seed is the sensitive secret date, do not return to user app if it is not required. */
+		memset(dev_info.seed_list, 0, sizeof(dev_info.seed_list));
 
-#if TARGET_PRODUCE_BXT
-	dev_info->state.data = PCI_READ_FUSE(HECI1);
-#else
-	dev_info->state.data = 0;
-#endif
+	dev_info.state.data = 0;
 
-	/* seed is the sensitive secret date, do not return to user app if it is not required. */
-	if (!(flags & GET_SEED))
-		memset(dev_info->seed_list, 0, sizeof(dev_info->seed_list));
-
-	if(flags & GET_ATTKB) {
-		attkb = (uint8_t *)malloc(MAX_ATTKB_SIZE + PAGE_SIZE);
-		if(!attkb) {
-			memset(dev_info, 0, copy_to_user_size);
-			free(dev_info);
-			return ERR_NO_MEMORY;
-		}
-		memset(attkb, 0, (MAX_ATTKB_SIZE + PAGE_SIZE));
-		attkb_page_aligned = (uint8_t *)PAGE_ALIGN((uint64_t)attkb);
-		ret = get_attkb(attkb_page_aligned, &attkb_size);
-		if((ret != 0) || (attkb_size == 0)) {
-			dprintf(CRITICAL, "failed to retrieve attkb\n");
-		} else {
-			dev_info->attkb_size = attkb_size;
-			memcpy_s(dev_info->attkb, dev_info->attkb_size, attkb_page_aligned, attkb_size);
-			memset(attkb, 0, (MAX_ATTKB_SIZE + PAGE_SIZE));
-			free(attkb);
-		}
-	}
-
-	ret = copy_to_user(info, dev_info, copy_to_user_size);
-	memset(dev_info, 0, copy_to_user_size);
+	ret = copy_to_user(info, &dev_info, sizeof(trusty_device_info_t));
+	memset(&dev_info, 0, sizeof(dev_info));
 
 	if (ret != NO_ERROR)
 		panic("failed (%ld) to copy structure to user\n", ret);
 
-	free(dev_info);
 	return NO_ERROR;
 }
 
